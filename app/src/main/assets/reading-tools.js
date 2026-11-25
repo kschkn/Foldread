@@ -1,0 +1,234 @@
+'use strict';
+
+const fontNames=['Spectral','Literata','PT Serif','Roboto'];
+let heldPlace=null, searchHit=null, paragraphOffsets=[], readingSince=0, pace=null;
+let previewFrame=0;
+
+function restoreReadingTools(id) {
+  heldPlace=read('held.'+id,null);
+  $('#returnPlace').hidden=!heldPlace;
+  searchHit=null;
+  pace=read('readingPace',null);
+  paragraphOffsets=book.chapters.map(({paragraphs})=>{
+    let total=0;
+    return paragraphs.map(text=>{const start=total;total+=text.length;return start;});
+  });
+  restartReadingClock();
+}
+
+function holdPlace() {
+  if(heldPlace) return;
+  heldPlace={...position};
+  write('held.'+book.id,heldPlace);
+  $('#returnPlace').hidden=false;
+}
+
+function returnToPlace() {
+  if(!heldPlace || animation) return;
+  const at=heldPlace;
+  heldPlace=null;searchHit=null;
+  localStorage.removeItem('held.'+book.id);
+  $('#returnPlace').hidden=true;
+  jump(at,false);
+}
+
+function searchBook(area) {
+  const input=el('input','bookSearch');
+  input.type='search';input.placeholder='Найти в книге';input.setAttribute('aria-label','Найти в книге');
+  const results=el('div');
+  area.append(input,results);
+  let timer;
+  input.oninput=()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>{
+      results.replaceChildren();
+      const query=input.value.trim();
+      if(!query || !area.contains(input)) return;
+      const escaped=Array.from(query,ch=>'\\^$.*+?()[]{}|'.includes(ch)?'\\'+ch:ch).join('');
+      const pattern=new RegExp(escaped,'giu');
+      let count=0;
+      for(let c=0;c<book.chapters.length;c++) {
+        const section=book.chapters[c];
+        for(let p=0;p<section.paragraphs.length;p++) {
+          const text=section.paragraphs[p];
+          pattern.lastIndex=0;
+          for(let found;(found=pattern.exec(text));) {
+            const offset=found.index;
+            const snippet=(offset>24?'…':'')+text.slice(Math.max(0,offset-24),offset+query.length+44);
+            results.append(row(section.title,snippet,el('span','ordinal',numeral(c)),()=>{
+              searchHit={chapter:c,p,offset,end:offset+query.length};
+              input.blur();jump(searchHit);
+            }));
+            if(++count===60) {
+              results.append(el('p','settingHint','Показаны первые 60 совпадений.'));return;
+            }
+          }
+        }
+      }
+      if(!count) results.append(el('p','empty','Совпадений нет.'));
+    },160);
+  };
+  input.focus();
+}
+
+// Links and highlights use exactly the same glyphs and font metrics as the measurement flow.
+function decorateExcerpt(paragraph,p,from,excerpt) {
+  const ranges=(textOf().refs?.[p]||[]).filter(ref=>Object.hasOwn(book.notes||{},ref.key));
+  if(searchHit?.chapter===chapter && searchHit.p===p)
+    ranges.push({start:searchHit.offset,end:searchHit.end,highlight:true});
+  const end=from+excerpt.length;
+  const relevant=ranges.filter(r=>r.end>from && r.start<end).sort((a,b)=>a.start-b.start);
+  if(!relevant.length) return;
+  paragraph.replaceChildren();
+  let pos=from;
+  for(const ref of relevant) {
+    const start=Math.max(from,ref.start),stop=Math.min(end,ref.end);
+    if(start<pos) continue;
+    paragraph.append(excerpt.slice(pos-from,start-from));
+    const label=excerpt.slice(start-from,stop-from);
+    const span=el(ref.highlight?'mark':'span',ref.highlight?'found':'note-ref',label);
+    if(!ref.highlight) {
+      span.tabIndex=0;span.setAttribute('role','button');
+      span.setAttribute('aria-label','Сноска '+label);
+      span.onclick=()=>showNote(span,ref.key,label);
+      span.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();span.click();}};
+    }
+    paragraph.append(span);pos=stop;
+  }
+  paragraph.append(excerpt.slice(pos-from));
+}
+function noteOpen() {return Boolean($('.note-card'));}
+function closeNote() {
+  const card=$('.note-card');
+  if(!card) return false;
+  card.remove();syncFold();restartReadingClock();return true;
+}
+function showNote(link,key,label) {
+  if(animation) return;
+  closeNote();
+  const right=link.closest('.page').classList.contains('left');
+  const card=el('aside','note-card '+(columns===1?'single':right?'on-right':'on-left'));
+  card.setAttribute('role','dialog');card.setAttribute('aria-label','Сноска '+label);
+  const header=el('div','note-heading');
+  const close=button('','round',()=>{closeNote();if(link.isConnected)link.focus({preventScroll:true});});
+  close.append(icon('close'));close.setAttribute('aria-label','Закрыть сноску');
+  header.append(el('span','settingLabel','Сноска '+label),close);
+  card.append(header,el('div','note-text',book.notes[key]));
+  $('#spread').append(card);
+  syncFold();restartReadingClock();close.focus({preventScroll:true});
+}
+
+function restartReadingClock() {readingSince=performance.now();}
+function offsetInChapter(at) {
+  return (paragraphOffsets[at.chapter][at.p] ?? chapterLengths[at.chapter])+at.offset;
+}
+function readingSample(direction) {
+  if(direction<0 || document.hidden || !document.body.classList.contains('reading') || $('#sheet').open || noteOpen()) return null;
+  const seconds=(performance.now()-readingSince)/1000;
+  const chars=offsetInChapter(anchor(page+columns))-offsetInChapter(anchor(page));
+  const perMinute=chars*60/seconds;
+  if(seconds<4 || seconds>420 || perMinute<120 || perMinute>4200) return null;
+  return perMinute;
+}
+function acceptReadingSample(value) {
+  if(!value) return;
+  pace=pace ? {rate:pace.rate*.75+value*.25,count:pace.count+1} : {rate:value,count:1};
+  write('readingPace',pace);
+  updateEstimate();
+}
+function minutesLeft() {
+  const remaining=chapterLengths[chapter]-offsetInChapter(anchor(page));
+  return Math.max(1,Math.ceil(remaining/(pace?.rate || 1050)));
+}
+function updateEstimate() {
+  $('#estimate').textContent='≈ '+minutesLeft()+' мин';
+}
+function showTimeLeft() {
+  const area=panel('До конца главы');
+  area.append(el('p','minutes','≈ '+minutesLeft()+' мин'),el('p','settingHint',pace
+    ? 'Оценка по вашему темпу чтения разворотов.'
+    : 'Предварительная оценка. После нескольких прочитанных страниц она подстроится под ваш темп.'));
+}
+
+function setBrightness(value) {
+  settings.brightness=value;
+  window.Library?.setReaderBrightness?.(value);
+}
+function adjustBrightness(gesture,dy) {
+  if(!gesture.light) {
+    gesture.light=true;
+    gesture.initialBrightness=settings.brightness<0?(window.Library?.systemBrightness?.() ?? 50):settings.brightness;
+  }
+  const value=Math.max(2,Math.min(100,Math.round(gesture.initialBrightness-dy*130/innerHeight)));
+  if(value!==settings.brightness) setBrightness(value);
+  notify('Яркость · '+value+' %');
+}
+
+function reflowSettings(values) {
+  Object.assign(settings,values);
+  write('settings',settings);
+  applySettings();
+  cancelAnimationFrame(previewFrame);
+  previewFrame=requestAnimationFrame(()=>layout(position));
+}
+
+function showTypography(tab='Страница') {
+  const area=panel('Настройки чтения');
+  $('#sheet').classList.add('typesheet');
+  const tabs=el('div','tabs');
+  for(const name of ['Страница','Шрифт','Экран'])
+    tabs.append(button(name,name===tab?'selected':'',()=>showTypography(name)));
+  area.append(tabs);
+  if(tab==='Экран') {
+    area.append(button('Анимация перелистывания','row',animationSettings),button('Профили чтения','row',profileSettings));
+  }
+  function slider(title,key,min,max,step,suffix='') {
+    const label=el('label','sliderRow');
+    const caption=el('span','sliderTitle',title);
+    const value=el('output','',String(settings[key])+suffix);
+    const input=el('input');input.type='range';input.min=min;input.max=max;input.step=step;
+    input.value=settings[key];input.setAttribute('aria-label',title);
+    input.oninput=()=>{
+      value.textContent=input.value+suffix;
+      reflowSettings({[key]:Number(input.value)});
+    };
+    caption.append(value);label.append(caption,input);area.append(label);
+  }
+  function choice(title,key,items) {
+    area.append(el('span','settingLabel',title));
+    const group=el('div','choices');
+    for(const [name,val] of items) group.append(button(name,settings[key]===val?'selected':'',()=>{
+      reflowSettings({[key]:val});showTypography(tab);
+    }));
+    area.append(group);
+  }
+  if(tab==='Страница') {
+    slider('Боковые поля','outside',0,60,1,' dp');
+    slider('Сверху и снизу','vertical',0,72,1,' dp');
+    slider('Со стороны сгиба','gutter',0,60,1,' dp');
+    slider('Межстрочный интервал','leading',1.15,2,.05,' ×');
+  } else if(tab==='Шрифт') {
+    slider('Размер текста','font',14,32,1);
+    for(const name of fontNames) {
+      const face=button('','fontOption',()=>{
+        reflowSettings({family:name});
+        document.fonts.load('18px "'+name+'"').then(()=>{
+          if(settings.family===name) layout(position);
+        });
+        showTypography(tab);
+      });
+      face.setAttribute('aria-pressed',settings.family===name);
+      face.append(el('small','',name),el('span','','Ветер шевелил страницы.'));
+      face.lastChild.style.fontFamily='"'+name+'"';
+      area.append(face);
+    }
+  } else {
+    choice('Тема','night',[['Бумага',false],['Ночь',true]]);
+    if(window.Library?.hasHinge?.()) choice('Перелистывание сгибом','fold',[['Включено',true],['Выключено',false]]);
+    area.append(el('span','settingLabel','Яркость'),el('p','settingHint','Проведите вверх или вниз вдоль левого края страницы.'));
+    const reset=button(settings.brightness<0?'Яркость как в системе':'Вернуть системную яркость','primary',()=>{
+      setBrightness(-1);write('settings',settings);showTypography(tab);
+    });
+    reset.disabled=settings.brightness<0;area.append(reset);
+  }
+}

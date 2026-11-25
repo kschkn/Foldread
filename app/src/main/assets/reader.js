@@ -1,0 +1,426 @@
+'use strict';
+
+const $ = selector => document.querySelector(selector);
+const el = (tag, cls, value) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (value != null) node.textContent = value;
+  return node;
+};
+const icons = {
+  book:'M2 4.5c4-.8 7 .4 10 3 3-2.6 6-3.8 10-3v13c-4-.7-7 .7-10 3-3-2.3-6-3.7-10-3z M12 7.5v13 M5 8c1.7 0 3 .7 4.4 1.5 M15 9.5c1.5-.8 3-1.5 4.4-1.5',
+  library:'M3 4h4v16H3z M10 4h3v16h-3z M15 5l3-.8 3.6 15-3 .8z',
+  bookmark:'M6 3.5h12v17l-6-4-6 4z',
+  contents:'M3 5h3m4 0h11M3 12h3m4 0h11M3 19h3m4 0h11',
+  left:'M14 6l-6 6 6 6',right:'M10 6l6 6-6 6',close:'M6 6l12 12M18 6L6 18',
+  plus:'M12 4v16M4 12h16'
+};
+function drawIcon(node) {
+  node.setAttribute('aria-hidden','true');
+  node.innerHTML = '<svg viewBox="0 0 24 24"><path d="'+icons[node.dataset.icon]+'"/></svg>';
+}
+function icon(name) {
+  const node=el('i'); node.dataset.icon=name; drawIcon(node); return node;
+}
+document.querySelectorAll('[data-icon]').forEach(drawIcon);
+const read = (key, fallback) => {
+  try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}
+};
+const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+const sample = {id:'sails',title:'Алые паруса',author:'Александр Грин',format:'1923',cover:'sails-cover.jpg',accent:'#95543c'};
+const settings = Object.assign({font:18,night:false,family:'Spectral',fold:true,
+  outside:22,vertical:24,gutter:16,leading:1.5,brightness:-1},read('settings',{}));
+if(!fontNames.includes(settings.family)) settings.family=settings.family==='sans'?'Roboto':'Spectral';
+const romans=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+const numeral = n => romans[n] || String(n+1);
+let book, chapter=0, page=0, columns=1, pages=1, width=0, model, paragraphs=[], boundaries=new Map();
+let position={chapter:0,p:0,offset:0}, marks=[], animation=null, revision=0, resizeTimer;
+let pendingTurn=null, touch=null;
+let chapterLengths=[], chapterStarts=[], totalLength=1, busyImport=false, toastTimer;
+const catalog = () => [sample,...Object.values(JSON.parse(window.Library?.catalog() || '{}'))];
+const textOf = () => book.chapters[chapter];
+
+function applySettings() {
+  document.body.classList.toggle('night',settings.night);
+  document.documentElement.style.setProperty('--type',settings.font+'px');
+  const style=document.documentElement.style;
+  style.setProperty('--reading','"'+settings.family+'", '+(settings.family==='Roboto'?'sans-serif':'serif'));
+  style.setProperty('--outside',settings.outside+'px');
+  style.setProperty('--vertical',settings.vertical+'px');
+  style.setProperty('--gutter',settings.gutter+'px');
+  style.setProperty('--leading',settings.leading);
+}
+async function openBook(id) {
+  const request=++revision;
+  try {
+    const response=await fetch(id==='sails'?'sails.json':'books/'+id+'.json');
+    if(!response.ok) throw new Error();
+    const loaded=await response.json();
+    if(request!==revision) return;
+    cancelTurn();
+    book=loaded;
+    if(id==='sails') Object.assign(book,{cover:sample.cover,accent:sample.accent,images:[{src:sample.cover,name:'Обложка издания 1923 года'}]});
+    totalLength=0; chapterStarts=[];
+    chapterLengths=book.chapters.map(c=>{
+      chapterStarts.push(totalLength);
+      const size=c.paragraphs.reduce((n,t)=>n+t.length,0);
+      totalLength+=size;
+      return size;
+    });
+    position=read('pos.'+id,{chapter:0,p:0,offset:0});
+    chapter=Math.max(0,Math.min(position.chapter,book.chapters.length-1));
+    marks=read('marks.'+id,[]);
+    document.body.classList.add('reading');
+    restoreReadingTools(id);
+    closeSheet();
+    layout(position);
+    write('active',id);
+    if(!read('menuHintSeen',false)) {
+      notify('Коснитесь центра экрана, чтобы открыть меню');
+      write('menuHintSeen',true);
+    }
+  } catch {
+    notify('Не удалось открыть книгу.');
+    if(!book && id!=='sails') await openBook('sails');
+  }
+}
+function chapterHeading() {
+  return makeHeading(chapter,textOf().title);
+}
+function makeHeading(number,title) {
+  const head=el('div','chapter');
+  head.append(el('small','', 'Глава '+numeral(number)),el('h1','',title),el('div','orn','✦'));
+  return head;
+}
+function leafFrame(side, index) {
+  const leaf=el('article','page '+side);
+  const running=el('div','running');
+  running.append(el('span','',columns===2 && side==='left' ? (book.author || book.title) : book.title));
+  const viewport=el('div','window');
+  const folio=el('div','folio',index<pages ? (index+1)+' / '+pages : '');
+  leaf.append(running,viewport,folio);
+  return leaf;
+}
+function layout(at) {
+  if(!book) return;
+  closeNote();
+  cancelTurn();
+  columns=innerWidth>=560 && Math.min(screen.width,screen.height)>=520 ? 2 : 1;
+  $('#spread').classList.toggle('two',columns===2);
+  const frame=leafFrame('left',0);
+  $('#leaves').replaceChildren(frame);
+  const rect=frame.querySelector('.window').getBoundingClientRect();
+  width=rect.width;
+  if(width<1 || rect.height<1) return;
+  const measure=$('#measure');
+  measure.style.width=width+'px'; measure.style.height=rect.height+'px';
+  document.documentElement.style.setProperty('--column',width+'px');
+  model=el('div','flow');
+  model.append(chapterHeading());
+  paragraphs=textOf().paragraphs.map((text,i)=>el('p',i===0?'opening':'',text));
+  for(const paragraph of paragraphs) model.append(paragraph);
+  measure.replaceChildren(model);
+  pages=Math.max(1,Math.round(model.scrollWidth/width));
+  boundaries=new Map();
+  page=alignPage(at==='end' ? pages-1 : pageOf(at));
+  render();
+  syncFold();
+}
+const alignPage = n => Math.floor(Math.max(0,Math.min(n,pages-1))/columns)*columns;
+function characterPage(p, offset) {
+  const node=paragraphs[p].firstChild;
+  const i=Math.min(Math.max(0,offset),node.length-1);
+  const range=document.createRange();
+  range.setStart(node,i); range.setEnd(node,i+1);
+  const rect=range.getClientRects()[0];
+  if(!rect) return 0;
+  return Math.max(0,Math.floor((rect.left-model.getBoundingClientRect().left+0.25)/width));
+}
+function pageOf(at) {
+  if(!at || at.p<0 || at.p>=paragraphs.length || (!at.p && !at.offset)) return 0;
+  return characterPage(at.p,at.offset);
+}
+// Locate the first character in a column. Text anchors survive a change of type or window size.
+function anchor(index) {
+  if(boundaries.has(index)) return boundaries.get(index);
+  let p=0, offset=0;
+  if(index>=pages) p=paragraphs.length;
+  else if(index>0) {
+    let end=paragraphs.length;
+    while(p<end) {
+      const mid=(p+end)>>1;
+      if(characterPage(mid,paragraphs[mid].textContent.length-1)<index) p=mid+1; else end=mid;
+    }
+    if(p<paragraphs.length) {
+      end=paragraphs[p].textContent.length;
+      while(offset<end) {
+        const mid=(offset+end)>>1;
+        if(characterPage(p,mid)<index) offset=mid+1; else end=mid;
+      }
+    }
+  }
+  const value={chapter,p,offset};
+  boundaries.set(index,value); return value;
+}
+function leafAt(side,index) {
+  const leaf=leafFrame(side,index);
+  if(index>=pages) return leaf;
+  const start=anchor(index), end=anchor(index+1);
+  const visible=el('div','flow');
+  if(index===0) visible.append(chapterHeading());
+  for(let p=start.p;p<=end.p && p<paragraphs.length;p++) {
+    const from=p===start.p?start.offset:0;
+    const until=p===end.p?end.offset:undefined;
+    const excerpt=textOf().paragraphs[p].slice(from,until);
+    if(!excerpt.length) continue;
+    const paragraph=el('p',index===0 && p===0?'opening':'',excerpt);
+    paragraph.dataset.paragraph=p;
+    if(notesForBook().some(n=>n.chapter===chapter && n.p===p)) paragraph.classList.add('annotated');
+    decorateExcerpt(paragraph,p,from,excerpt);
+    if(from>0) paragraph.style.textIndent='0';
+    visible.append(paragraph);
+  }
+  leaf.querySelector('.window').append(visible);
+  if(marks.some(m=>m.chapter===chapter && pageOf(m)===index)) leaf.append(el('div','ribbon'));
+  return leaf;
+}
+function render() {
+  const leaves=[leafAt('left',page)];
+  if(columns===2) leaves.push(leafAt('right',page+1));
+  $('#leaves').replaceChildren(...leaves);
+  updateControls();
+}
+function updateControls() {
+  $('#chapterNumber').textContent='Глава '+numeral(chapter)+' из '+book.chapters.length;
+  $('#chapterName').textContent=textOf().title;
+  $('#prev').disabled=page===0 && chapter===0;
+  $('#next').disabled=page+columns>=pages && chapter===book.chapters.length-1;
+  const pos=anchor(page);
+  let chars=chapterStarts[chapter]+pos.offset;
+  for(let i=0;i<pos.p;i++) chars+=textOf().paragraphs[i].length;
+  const percent=$('#next').disabled?100:Math.floor(100*chars/Math.max(1,totalLength));
+  $('#percent').textContent=percent+'%'; $('#bar').style.width=percent+'%';
+  updateEstimate();
+  const marked=visibleMark()!==-1;
+  $('#mark').setAttribute('aria-pressed',marked);
+  $('#mark').setAttribute('aria-label',marked?'Снять закладку':'Поставить закладку');
+}
+function visibleMark() {
+  return marks.findIndex(m=>m.chapter===chapter && alignPage(pageOf(m))===page);
+}
+function save(at) {
+  position=at;write('pos.'+book.id,position);
+  if(page+columns>=pages && chapter===book.chapters.length-1) write('completed.'+book.id,true);
+}
+function cancelTurn() {
+  if(pendingTurn) {
+    $('#leaves').replaceChildren(...pendingTurn.original);
+    chapter=pendingTurn.originalChapter;
+    page=pendingTurn.originalPage;
+    const previous=pendingTurn.previousLayout;
+    if(previous) {
+      model=previous.model;paragraphs=previous.paragraphs;
+      pages=previous.pages;boundaries=previous.boundaries;
+      $('#measure').replaceChildren(model);
+    }
+    updateControls();
+  }
+  removeTurnLayers();
+}
+function removeTurnLayers() {
+  if(pendingTurn) {
+    animation.onfinish=null;
+    for(const track of pendingTurn.tracks) track.cancel();
+    for(const plane of pendingTurn.planes) plane.remove();
+  }
+  animation=null;pendingTurn=null;
+  document.body.classList.remove('turning');
+}
+function prepareTurn(direction) {
+  if(!book || animation || noteOpen() || $(direction>0?'#next':'#prev').disabled) return false;
+  const originalChapter=chapter, originalPage=page;
+  const timing=readingSample(direction);
+  const old=[...$('#leaves').children];
+  const target=page+direction*columns;
+  let previousLayout=null;
+  if(target<0 || target>=pages) {
+    previousLayout={model,paragraphs,pages,boundaries};
+    chapter+=direction;
+    layout(direction<0?'end':{p:0,offset:0});
+  } else {page=target; render();}
+  const destination=[...$('#leaves').children];
+  pendingTurn={originalChapter,originalPage,direction,timing,original:old,destination,previousLayout,tracks:[],planes:[]};
+  Object.assign(pendingTurn,buildTurn($('#spread'),$('#leaves'),old,destination,direction,
+    settings.turnMode||'book',touch ? touch.y/innerHeight : .94));
+  document.body.classList.add('turning');
+  animation=pendingTurn.tracks[0];
+  return true;
+}
+function settleTurn(commit) {
+  if(!animation) return;
+  const moving=animation;
+  const finish=()=>{
+    if(animation!==moving) return;
+    if(commit) {
+      acceptReadingSample(pendingTurn.timing);
+      save(anchor(page));
+      $('#leaves').replaceChildren(...pendingTurn.destination);
+      removeTurnLayers();
+    } else cancelTurn();
+    restartReadingClock();
+  };
+  if(settings.turnMode==='instant' || !commit && moving.currentTime<=0) {finish();return;}
+  moving.onfinish=finish;
+  const rate=(commit?1:-1)*(matchMedia('(prefers-reduced-motion: reduce)').matches?4:1);
+  for(const track of pendingTurn.tracks) {track.playbackRate=rate;track.play();}
+}
+function turn(direction) {
+  if(prepareTurn(direction)) settleTurn(true);
+}
+function jump(at, remember=true) {
+  if(remember && (at.chapter!==chapter || alignPage(pageOf(at))!==page)) holdPlace();
+  cancelTurn(); closeSheet(); document.body.classList.add('reading'); chapter=at.chapter; layout(at); save(at);
+  restartReadingClock();
+}
+function notify(message) {
+  const toast=$('#toast'); toast.textContent=message; toast.classList.add('visible');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove('visible'),2300);
+}
+function toggleMark() {
+  const found=visibleMark();
+  if(found!==-1) marks.splice(found,1); else marks.push({...anchor(page)});
+  write('marks.'+book.id,marks); render(); notify(found===-1?'Закладка добавлена':'Закладка снята');
+}
+function closeSheet() {
+  if(!$('#sheet').open) return false;
+  $('#sheet').close(); syncFold(); return true;
+}
+function syncFold() {
+  window.Library?.enableFold?.(Boolean(book && !fanSession && !pickingText && !document.getElementById('parallel') && columns===2 && settings.fold && !noteOpen() && !$('#sheet').open && document.body.classList.contains('reading')));
+}
+function toggleMenu() {
+  document.body.classList.toggle('reading');
+  syncFold();restartReadingClock();
+}
+window.handleBack=()=>{
+  if(exitEditionOverlay()) return true;
+  if(closeSheet()) return true;
+  if(closeNote()) return true;
+  if(!document.body.classList.contains('reading')) {toggleMenu();return true;}
+  return false;
+};
+window.foldTurn=()=>{
+  if(!touch && book && !fanSession && !pickingText && !document.getElementById('parallel') && columns===2 && settings.fold && !$('#sheet').open && document.body.classList.contains('reading')) turn(1);
+};
+function panel(title) {
+  closeNote();
+  $('#sheet').classList.remove('typesheet','shelfsheet','widesheet','gallerysheet');
+  restartReadingClock();
+  $('#sheet h2').textContent=title;
+  const area=$('#panel'); area.replaceChildren();
+  if(!$('#sheet').open) $('#sheet').showModal();
+  syncFold();
+  return area;
+}
+function button(label, cls, action) {
+  const node=el('button',cls,label);node.onclick=action;return node;
+}
+function row(title,description,lead,action,current=false) {
+  const node=button('', 'row'+(current?' current':''),action);
+  const copy=el('span');copy.append(el('b','',title));
+  if(description) copy.append(el('small','',description));
+  node.append(lead,copy);return node;
+}
+function library() {
+  showShelf();
+}
+window.importStarted=()=>{busyImport=true;library();};
+window.importCancelled=()=>{busyImport=false;library();};
+window.bookImported=id=>{busyImport=false;openBook(id);};
+window.importFailed=message=>{busyImport=false;library();$('#panel').append(el('p','empty',message));};
+function contents(tab='chapters') {
+  const area=panel(book.title);
+  const tabs=el('div','tabs');
+  tabs.append(button('Оглавление',tab==='chapters'?'selected':'',()=>contents()),button('Закладки · '+marks.length,tab==='marks'?'selected':'',()=>contents('marks')),button('Поиск',tab==='search'?'selected':'',()=>contents('search')));
+  area.append(tabs);
+  if(tab==='search') {searchBook(area);return;}
+  if(tab==='chapters') book.chapters.forEach((c,i)=>area.append(row(c.title,'',el('i','ordinal',numeral(i)),()=>jump({chapter:i,p:0,offset:0}),i===chapter)));
+  else {
+    if(!marks.length) area.append(el('p','empty','Коснитесь закладки вверху экрана, чтобы сохранить место в книге.'));
+    for(const m of marks.slice().sort((a,b)=>a.chapter-b.chapter||a.p-b.p||a.offset-b.offset)) {
+      const c=book.chapters[m.chapter];
+      area.append(row(c.title,(c.paragraphs[m.p]||'').slice(m.offset,m.offset+80),icon('bookmark'),()=>jump(m)));
+    }
+  }
+}
+$('#library').onclick=library;$('#contents').onclick=()=>contents();$('#settings').onclick=()=>showTypography();
+$('#extras').onclick=editionMenu;
+$('#timeLeft').onclick=showTimeLeft;$('#returnPlace').onclick=returnToPlace;
+$('#close').onclick=closeSheet;$('#sheet').onclick=e=>{if(e.target===$('#sheet')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientY<r.top||e.clientX>r.right||e.clientY>r.bottom)closeSheet();}};
+$('#prev').onclick=()=>turn(-1);$('#next').onclick=()=>turn(1);$('#mark').onclick=toggleMark;
+$('#spread').oncontextmenu=e=>{if(pickingText!=='quote')e.preventDefault();};
+$('#spread').onpointerdown=e=>{
+  if(!e.isPrimary || animation || !book) return;
+  if(handleEditionPress(e)) return;
+  if(e.target.closest('.note-ref,.note-card')) return;
+  if(closeNote()) return;
+  touch={x:e.clientX,y:e.clientY,id:e.pointerId,started:e.timeStamp,drag:false,annotated:e.target.closest('p.annotated')};
+  e.currentTarget.setPointerCapture(e.pointerId);
+  armFan(e);
+};
+function trackDrag(e) {
+  if(!touch || touch.id!==e.pointerId) return;
+  const dx=e.clientX-touch.x,dy=e.clientY-touch.y;
+  if(Math.abs(dx)+Math.abs(dy)>10) clearFanTimer();
+  if(!touch.drag && touch.x<=Math.min(50,innerWidth*.12) && (touch.light || Math.abs(dy)>10 && Math.abs(dy)>1.35*Math.abs(dx))) {
+    adjustBrightness(touch,dy);return;
+  }
+  if(!touch.drag && Math.abs(dx)>8 && Math.abs(dx)>Math.abs(dy)*1.2) {
+    touch.drag=prepareTurn(dx<0?1:-1);
+  }
+  if(touch.drag && pendingTurn) {
+    const travel=$('#spread').clientWidth;
+    touch.progress=Math.max(0,Math.min(.999,-pendingTurn.direction*dx/travel));
+    for(const track of pendingTurn.tracks) track.currentTime=480*touch.progress;
+  }
+}
+$('#spread').onpointermove=trackDrag;
+function abortTouch() {
+  clearFanTimer();
+  if(touch?.drag && pendingTurn) settleTurn(false);
+  touch=null;
+}
+$('#spread').onpointercancel=abortTouch;
+$('#spread').onlostpointercapture=abortTouch;
+$('#spread').onpointerup=e=>{
+  clearFanTimer();
+  if(!touch || touch.id!==e.pointerId)return;
+  trackDrag(e);
+  const gesture=touch;touch=null;
+  const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+  if(gesture.light) {write('settings',settings);return;}
+  if(gesture.drag) {
+    const flick=e.timeStamp-gesture.started<260 && Math.abs(dx)>32 && gesture.progress>.04;
+    settleTurn(gesture.progress>=.24 || flick);
+  } else if(Math.abs(dx)<12&&Math.abs(dy)<12) {
+    if(gesture.annotated){
+      const p=Number(gesture.annotated.dataset.paragraph);
+      editNote(p,notesForBook().find(n=>n.chapter===chapter&&n.p===p));return;
+    }
+    const r=$('#spread').getBoundingClientRect(), x=(e.clientX-r.left)/r.width;
+    if(x<.27 || x>.73) turn(x>.73?1:-1);
+    else toggleMenu();
+  }
+};
+document.onkeydown=e=>{
+  if($('#sheet').open || !book)return;
+  if(['ArrowRight','PageDown','ArrowLeft','PageUp'].includes(e.key)) {
+    e.preventDefault();turn(['ArrowRight','PageDown'].includes(e.key)?1:-1);
+  }
+};
+window.onresize=()=>{if(fanSession)endFan(false);touch=null;clearFanTimer();clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>layout(position),80);};
+$('#sheet').addEventListener('close',()=>{syncFold();restartReadingClock();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden) abortTouch();restartReadingClock();});
+applySettings();
+window.Library?.setReaderBrightness?.(settings.brightness);
+document.fonts.load('18px "'+settings.family+'"').then(()=>openBook(read('active','sails')));
