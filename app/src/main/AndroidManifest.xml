@@ -8,6 +8,28 @@
     </queries>
     <application android:allowBackup="false" android:label="Bookfold" android:icon="@drawable/ic_book" android:theme="@style/AppTheme">
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
+        <receiver android:name=".ReadingWidgets$CurrentBook" android:label="@string/widget_book" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_book_info"/>
+        </receiver>
+        <receiver android:name=".ReadingWidgets$Time" android:label="@string/widget_time" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_time_info"/>
+        </receiver>
+        <receiver android:name=".ReadingWidgets$Bookmark" android:label="@string/widget_mark" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_bookmark_info"/>
+        </receiver>
+        <receiver android:name=".ReadingWidgets$Week" android:label="@string/widget_week" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="android.intent.action.DATE_CHANGED"/><action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_week_info"/>
+        </receiver>
+        <activity android:name=".WeeklyGoalActivity" android:label="@string/widget_week" android:exported="false"
+            android:taskAffinity="" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.Dialog.Alert"/>
         <service android:name=".BookPlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
             <intent-filter><action android:name="android.media.browse.MediaBrowserService"/></intent-filter>
         </service>

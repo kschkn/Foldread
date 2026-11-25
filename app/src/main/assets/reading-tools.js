@@ -55,7 +55,8 @@ function searchBook(area,onResult=null) {
           for(let found;(found=pattern.exec(text));) {
             const offset=found.index;
             const snippet=(offset>24?'…':'')+text.slice(Math.max(0,offset-24),offset+query.length+44);
-            results.append(row(section.title,snippet,el('span','ordinal',numeral(c)),()=>{
+            const heading=sectionAt(sectionsByChapter[c],p);
+            results.append(row(heading.title,snippet,el('span','ordinal',numeral(heading.index)),()=>{
               const hit={chapter:c,p,offset,end:offset+query.length};
               input.blur();
               if(onResult)onResult(hit);else{searchHit=hit;jump(hit);}
@@ -140,7 +141,9 @@ function acceptReadingSample(value) {
   updateEstimate();
 }
 function minutesLeft() {
-  const remaining=chapterLengths[chapter]-offsetInChapter(anchor(page));
+  const at=anchor(page),entry=activeEntry||sectionAt(sectionsByChapter[chapter],at.p),next=contentsEntries[entry.index+1];
+  const end=next?.chapter===chapter?paragraphOffsets[chapter][next.p]:chapterLengths[chapter];
+  const remaining=end-Math.max(offsetInChapter(at),paragraphOffsets[chapter][entry.p]);
   return Math.max(1,Math.ceil(remaining/(pace?.rate || 1050)));
 }
 function updateEstimate() {
@@ -222,16 +225,16 @@ function showTypography(tab='Страница'){
     input.oninput=()=>{value.textContent=input.value+suffix;reflowSettings({[key]:Number(input.value)});};
     caption.append(value);label.append(caption,input);target.append(label);
   }
-  function choice(title,key,items,target=controls){
+  function choice(title,key,items,target=controls,current=settings[key],apply=val=>reflowSettings({[key]:val})){
     const label=el('span','settingLabel',title),group=el('div','choices');
     group.setAttribute('role','group');group.setAttribute('aria-label',title);
     for(const [name,val] of items){
-      const option=button(name,settings[key]===val?'selected':'',()=>{
-        reflowSettings({[key]:val});
+      const option=button(name,current===val?'selected':'',()=>{
+        apply(val);
         for(const child of group.children){child.classList.toggle('selected',child===option);child.setAttribute('aria-pressed',child===option);}
         if(key==='spreadMode')guide.textContent=spreadDescription()+' На внешнем экране всегда одна.';
       });
-      option.setAttribute('aria-pressed',settings[key]===val);group.append(option);
+      option.setAttribute('aria-pressed',current===val);group.append(option);
     }
     target.append(label,group);
   }
@@ -260,6 +263,10 @@ function showTypography(tab='Страница'){
       face.append(el('small','',name),el('span','','Ветер шевелил страницы.'));face.lastChild.style.fontFamily='"'+name+'"';controls.append(face);
     }
   }else{
+    const key='orientation.'+book.id;
+    choice('Ориентация этой книги',key,[['Системная','system'],['Портретная','portrait'],['Альбомная','landscape']],controls,read(key,'system'),val=>{
+      write(key,val);syncBookOrientation();
+    });
     choice('Оформление','night',[['Бумага',false],['Ночь',true]]);
     if(window.Library?.hasHinge?.())choice('Листать сгибанием','fold',[['Да',true],['Нет',false]]);
     for(const [name,action] of [['Анимация перелистывания',animationSettings],['Жесты и настройки Fold',foldSettings],['Профили чтения',profileSettings]])

@@ -17,6 +17,7 @@
   <script defer src="workspaces.js"></script>
   <script defer src="fold-tools.js"></script>
   <script defer src="collection.js"></script>
+  <script defer src="statistics.js"></script>
   <script defer src="reader.js"></script>
 </head>
 <body class="reading">
@@ -26,6 +27,7 @@
       <button id="library" aria-label="Библиотека"><i data-icon="library"></i><span>Библиотека</span></button>
       <span class="divider"></span>
       <button id="mark" aria-label="Поставить закладку"><i data-icon="bookmark"></i></button>
+      <button id="stats" aria-label="Статистика чтения" title="Статистика чтения"><i data-icon="stats"></i></button>
       <button id="settings" aria-label="Настройки чтения" title="Настройки чтения"><b class="aa" aria-hidden="true">Аа</b></button>
       <button id="extras" aria-label="Инструменты чтения" title="Инструменты чтения"><i data-icon="tools"></i></button>
     </div>
@@ -38,7 +40,7 @@
     <button id="contents" aria-label="Оглавление и закладки">
       <i data-icon="contents"></i><span><small id="chapterNumber"></small><strong id="chapterName"></strong><small id="menuBookProgress"></small></span>
     </button>
-    <div id="bookMeter" role="progressbar" aria-label="Прочитано по всей книге" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="track"><span id="bar"></span></span><span id="menuPercent"></span></div>
+    <div id="meterGroup"><div id="bookMeter" role="progressbar" aria-label="Прочитано по всей книге" aria-describedby="menuBookProgress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="track"><span id="bar"></span></span><span id="menuPercent"></span></div></div>
     <button id="timeLeft"><span>До конца главы</span><span id="estimate"></span></button>
     <div class="arrows"><button id="prev" aria-label="Назад"><i data-icon="left"></i></button><button id="next" aria-label="Вперёд"><i data-icon="right"></i></button></div>
   </footer>

@@ -1,0 +1,13 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_paper" android:orientation="vertical" android:gravity="center_vertical"
+    android:padding="12dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/widget_time" android:textColor="#65543C" android:textSize="13sp"/>
+    <TextView android:id="@+id/widget_duration" android:layout_width="match_parent" android:layout_height="38dp"
+        android:gravity="center_vertical" android:text="2 ч 15 мин" android:fontFamily="serif" android:textColor="#253B34"
+        android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="10sp"
+        android:autoSizeMaxTextSize="26sp" android:autoSizeStepGranularity="1sp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/widget_all_time" android:textColor="#655D4D" android:textSize="11sp"/>
+</LinearLayout>

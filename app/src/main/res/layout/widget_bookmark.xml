@@ -1,0 +1,15 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_paper" android:orientation="vertical" android:gravity="center_vertical" android:padding="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+        <ImageView android:layout_width="10dp" android:layout_height="20dp" android:src="@drawable/widget_ribbon"
+            android:layout_marginEnd="6dp" android:importantForAccessibility="no"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/widget_mark"
+            android:textColor="#7C463D" android:textSize="12sp"/>
+    </LinearLayout>
+    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Алые паруса" android:fontFamily="serif" android:textColor="#332F29" android:textSize="18sp"
+        android:maxLines="2" android:ellipsize="end"/>
+    <TextView android:id="@+id/widget_mark_location" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Глава IV" android:textColor="#655D4D" android:textSize="12sp"/>
+</LinearLayout>

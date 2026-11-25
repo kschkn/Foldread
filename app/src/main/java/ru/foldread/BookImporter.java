@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -36,6 +39,13 @@ final class BookImporter {
     private String title;
     private String author = "";
     private BookArtwork artwork;
+    private final Map<Element,String> anchors=new IdentityHashMap<>();
+    private final Map<Element,String> linkedAnchors=new IdentityHashMap<>();
+    private final TreeMap<Integer,String> sectionTitles=new TreeMap<>();
+    private final TreeMap<Integer,String> linkedTitles=new TreeMap<>();
+    private Element firstHeading;
+    private int firstHeadingParagraph;
+    static final int SCHEMA=5;
 
     static JSONObject read(File file, String filename, String id, File directory) throws Exception {
         BookImporter reader = new BookImporter();
@@ -56,15 +66,22 @@ final class BookImporter {
         if (reader.chapters.length() == 0) throw new IOException("В книге нет доступного текста.");
         return new JSONObject().put("id", id).put("title", reader.title)
                 .put("author", reader.author).put("format", zipped ? "EPUB" : "FB2")
-                .put("chapters", reader.chapters).put("notes", reader.notes.texts).put("schema", 4)
+                .put("chapters", reader.chapters).put("notes", reader.notes.texts).put("schema", SCHEMA)
                 .put("cover",reader.artwork.cover).put("accent",reader.artwork.accent)
                 .put("series",reader.artwork.series).put("volume",reader.artwork.volume).put("images",reader.artwork.images);
     }
 
     private void addChapter(String name, List<String> paragraphs) throws Exception {
         if (paragraphs.isEmpty()) return;
-        String fallback = "Раздел " + (chapters.length() + 1);
-        JSONObject chapter=notes.chapter(name.isEmpty() ? fallback : name, paragraphs);
+        JSONObject chapter=notes.chapter(name,paragraphs);
+        if(firstHeading!=null&&firstHeadingParagraph>0&&firstHeadingParagraph<paragraphs.size())
+            chapter.put("inlineHeading",new JSONObject().put("p",firstHeadingParagraph).put("title",anchors.get(firstHeading)));
+        if(!sectionTitles.isEmpty()){
+            JSONArray sections=new JSONArray();
+            for(Map.Entry<Integer,String> s:sectionTitles.entrySet())if(s.getKey()<paragraphs.size())
+                sections.put(new JSONObject().put("p",s.getKey()).put("title",s.getValue()));
+            chapter.put("sections",sections);
+        }
         if(stanzas.length()>0)chapter.put("stanzas",stanzas);
         chapters.put(chapter);stanzas=new JSONArray();
         paragraphs.clear();
@@ -92,7 +109,7 @@ final class BookImporter {
         artwork.fb2(doc,info);
         notes.fb2(doc);
         for (Element body : root.children()) {
-            if (body.tagName().equals("body")) section(body, title);
+            if (body.tagName().equals("body")) section(body, "");
         }
     }
 
@@ -143,6 +160,13 @@ final class BookImporter {
         for (Element item : pkg.select("manifest > item")) items.put(item.id(), item);
         URI base = new URI(null, null, "/" + opf, null);
         artwork.epub(pkg,zip,base);
+        Map<String,Map<String,String>> toc=new HashMap<>();
+        for(Element item:items.values())if(java.util.Arrays.asList(item.attr("properties").split("\\s+")).contains("nav"))
+            readContents(zip,base,item,true,toc);
+        Element spine=pkg.selectFirst("spine");
+        Element ncx=spine==null?null:items.get(spine.attr("toc"));
+        if(ncx==null)for(Element item:items.values())if(item.attr("media-type").equals("application/x-dtbncx+xml")){ncx=item;break;}
+        if(ncx!=null)readContents(zip,base,ncx,false,toc);
         Set<String> textFiles = new HashSet<>();
         for (Element item : items.values()) {
             if (!item.attr("media-type").contains("html")) continue;
@@ -161,12 +185,29 @@ final class BookImporter {
             String name = uri.getPath().substring(1);
             Document doc = entry(zip, name, Parser.htmlParser());
             doc.select("script, style, nav, [hidden], svg, noscript").remove();
-            Element head = doc.body().selectFirst("h1,h2,h3");
-            String heading = head == null ? doc.title() : head.text();
-            if (head != null) head.remove();
+            anchors.clear();linkedAnchors.clear();sectionTitles.clear();linkedTitles.clear();firstHeadingParagraph=0;
+            Map<String,String> labels=toc.getOrDefault(name,java.util.Collections.emptyMap());
+            Element head=doc.body().selectFirst("h1,h2,h3,h4,h5,h6");
+            firstHeading=head;
+            String heading=head==null?"":head.text();
+            for(Element h:doc.body().select("h1,h2,h3,h4,h5,h6"))if(h.hasText())anchors.put(h,h.text());
+            for(Map.Entry<String,String> label:labels.entrySet()){
+                String fragment=label.getKey();
+                if(fragment.isEmpty())continue;
+                Element target=doc.getElementById(fragment);
+                if(target==null)for(Element a:doc.select("a[name]"))if(fragment.equals(a.attr("name"))){target=a;break;}
+                if(target!=null){
+                    Element h=target.closest("h1,h2,h3,h4,h5,h6");
+                    linkedAnchors.put(h==null?target:h,label.getValue());
+                }
+            }
+            if(head!=null)head.empty();
             notes.epubLinks(doc, name);
             List<String> paragraphs = new ArrayList<>();
             collect(doc.body(), paragraphs);
+            sectionTitles.putAll(linkedTitles);
+            if(labels.containsKey("")&&!linkedTitles.containsKey(0))sectionTitles.put(0,labels.get(""));
+            if(heading.isEmpty()||firstHeadingParagraph>0)heading=sectionTitles.getOrDefault(0,doc.title().equals(title)?"":doc.title());
             addChapter(heading, paragraphs);
         }
         // Note files may also occur in the spine. Bound each pass independently.
@@ -178,6 +219,39 @@ final class BookImporter {
         }
     }
 
+    private void readContents(ZipFile zip,URI base,Element item,boolean nav,Map<String,Map<String,String>> toc)throws Exception{
+        URI file=localLink(base,item.attr("href"));
+        if(file==null||zip.getEntry(file.getPath().substring(1))==null)return;
+        Document doc=entry(zip,file.getPath().substring(1),nav?Parser.htmlParser():Parser.xmlParser());
+        if(nav){
+            for(Element list:doc.select("nav")){
+                if(!java.util.Arrays.asList(list.attr("epub:type").split("\\s+")).contains("toc")&&!list.attr("role").equals("doc-toc"))continue;
+                for(Element link:list.select("a[href]"))addLabel(toc,file,link.attr("href"),link.text());
+            }
+        }else{
+            for(Element point:doc.select("navMap navPoint")){
+                Element label=null,content=null;
+                for(Element child:point.children()){
+                    if(child.tagName().equalsIgnoreCase("navLabel"))label=child;
+                    if(child.tagName().equalsIgnoreCase("content"))content=child;
+                }
+                if(label!=null&&content!=null)addLabel(toc,file,content.attr("src"),label.text());
+            }
+        }
+    }
+    private static URI localLink(URI base,String href){
+        try{
+            URI uri=base.resolve(href.replace(" ","%20"));
+            return !href.isEmpty()&&!uri.isAbsolute()&&uri.getAuthority()==null&&uri.getPath()!=null&&uri.getPath().startsWith("/")?uri:null;
+        }catch(IllegalArgumentException ex){return null;}
+    }
+    private static void addLabel(Map<String,Map<String,String>> toc,URI base,String href,String title){
+        URI target=localLink(base,href);
+        if(target==null||title.isEmpty())return;
+        toc.computeIfAbsent(target.getPath().substring(1),k->new LinkedHashMap<>())
+            .putIfAbsent(target.getFragment()==null?"":target.getFragment(),title);
+    }
+
     private void collect(Element root, List<String> paragraphs) {
         StringBuilder line = new StringBuilder();
         collectNodes(root, paragraphs, line);
@@ -185,6 +259,9 @@ final class BookImporter {
     }
 
     private void collectNodes(Element el, List<String> paragraphs, StringBuilder line) {
+        if(el==firstHeading)firstHeadingParagraph=paragraphs.size();
+        if(linkedAnchors.containsKey(el))linkedTitles.put(paragraphs.size(),linkedAnchors.get(el));
+        if(anchors.containsKey(el))sectionTitles.put(paragraphs.size(),anchors.get(el));
         boolean stanza=el.tagName().equals("stanza")||el.hasClass("stanza");
         if(stanza)flush(paragraphs,line);
         int start=paragraphs.size();

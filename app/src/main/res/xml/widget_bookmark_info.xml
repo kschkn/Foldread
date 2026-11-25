@@ -1,0 +1,5 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="150dp" android:minHeight="96dp" android:targetCellWidth="3" android:targetCellHeight="2"
+    android:minResizeWidth="135dp" android:minResizeHeight="90dp" android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/widget_bookmark" android:previewLayout="@layout/widget_bookmark"
+    android:description="@string/widget_mark_description" android:widgetCategory="home_screen" android:updatePeriodMillis="0"/>

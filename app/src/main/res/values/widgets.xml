@@ -1,0 +1,22 @@
+<resources>
+    <string name="widget_book">Сейчас читаю</string>
+    <string name="widget_time">Время чтения</string>
+    <string name="widget_book_description">Текущая книга, страницы и процент прочитанного. Касание возвращает к тексту.</string>
+    <string name="widget_time_description">Часы и минуты, проведённые за чтением книг.</string>
+    <string name="widget_open_book">Открыть книгу</string>
+    <string name="widget_counting">Подсчёт страниц…</string>
+    <string name="widget_hours">%1$d ч %2$02d мин</string>
+    <string name="widget_minutes">%1$d мин</string>
+    <string name="widget_all_time">За всё время</string>
+    <string name="widget_mark">Последняя закладка</string>
+    <string name="widget_no_bookmark">Закладок пока нет</string>
+    <string name="widget_mark_hint">Потяните от верха страницы вниз</string>
+    <string name="widget_mark_description">Переход к последней закладке в библиотеке.</string>
+    <string name="widget_week">Цель на неделю</string>
+    <string name="widget_week_description">Минуты чтения по дням и недельная цель. Коснитесь, чтобы изменить цель.</string>
+    <string name="widget_week_minutes">%1$d из %2$d мин</string>
+    <string name="widget_goal_edit">Минуты чтения в неделю</string>
+    <string name="widget_goal_range">Введите от 1 до 10 080 минут</string>
+    <string name="widget_save">Сохранить</string>
+    <string-array name="widget_days"><item>Пн</item><item>Вт</item><item>Ср</item><item>Чт</item><item>Пт</item><item>Сб</item><item>Вс</item></string-array>
+</resources>

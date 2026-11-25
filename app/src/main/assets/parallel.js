@@ -66,8 +66,8 @@ class ParallelPane {
     const node=el('article','pairPane'),header=el('div','pairBook');
     header.append(el('small','settingLabel',label),el('b','',volume.title));
     this.chapters=el('select');this.chapters.setAttribute('aria-label','Глава · '+volume.title);
-    volume.chapters.forEach((c,i)=>this.chapters.add(new Option(c.title,i)));
-    this.chapters.onchange=()=>{this.go({chapter:Number(this.chapters.value),p:0,offset:0});this.onChange(this);};
+    this.setVolume(volume);
+    this.chapters.onchange=()=>{const [chapter,p]=this.chapters.value.split(':').map(Number);this.go({chapter,p,offset:0});this.onChange(this);};
     this.view=el('div','pairViewport');this.flow=el('div','pairFlow');this.view.append(this.flow);
     const nav=el('nav','pairNav');
     this.prev=button('‹','round',()=>this.step(-1));this.next=button('›','round',()=>this.step(1));this.label=el('small');
@@ -87,6 +87,11 @@ class ParallelPane {
       down=null;
     };
   }
+  setVolume(volume){
+    this.volume=volume;this.chapter=null;this.chapters.replaceChildren();
+    this.sections=volume.chapters.map(sectionEntries);
+    this.sections.forEach((entries,c)=>{for(const s of entries)this.chapters.add(new Option(s.title,c+':'+s.p));});
+  }
   select(p){
     this.flow.querySelector('.pairSelection')?.classList.remove('pairSelection');
     this.selection={chapter:this.chapter,p,offset:0};this.nodes[p]?.classList.add('pairSelection');
@@ -97,7 +102,7 @@ class ParallelPane {
     const bounds=this.view.getBoundingClientRect();this.w=bounds.width;this.h=bounds.height;
     this.flow.style.columnWidth=this.w+'px';
     if(this.chapter!==c){
-      this.chapter=c;this.selection=null;this.chapters.value=c;
+      this.chapter=c;this.selection=null;
       const content=this.volume.chapters[c];
       this.nodes=content.paragraphs.map((s,i)=>{const n=el('p','',typeset(s));n.dataset.p=i;return n;});
       const fragment=document.createDocumentFragment();
@@ -108,6 +113,7 @@ class ParallelPane {
     const p=Math.max(0,Math.min(this.nodes.length-1,at.p));
     this.display(at.end?this.count-1:this.column(p,at.offset||0));
     this.at=at.end?this.first():{chapter:c,p,offset:at.offset||0};
+    this.chapters.value=c+':'+sectionAt(this.sections[c],this.at.p).p;
     if(select)this.select(p);
   }
   column(p,offset){
@@ -137,7 +143,7 @@ class ParallelPane {
     if((dir<0?this.prev:this.next).disabled)return;
     const n=this.page+dir;
     if(n<0 || n>=this.count)this.go({chapter:this.chapter+dir,p:0,offset:0,end:dir<0});
-    else{this.display(n);this.at=this.first();}
+    else{this.display(n);this.at=this.first();this.chapters.value=this.chapter+':'+sectionAt(this.sections[this.chapter],this.at.p).p;}
     this.onChange(this);
   }
 }

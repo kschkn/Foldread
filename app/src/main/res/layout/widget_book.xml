@@ -1,0 +1,26 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_ink" android:gravity="center_vertical" android:padding="12dp">
+    <ImageView android:id="@+id/widget_cover" android:layout_width="44dp" android:layout_height="68dp"
+        android:layout_marginEnd="12dp" android:scaleType="fitCenter" android:src="@drawable/ic_audio_book"
+        android:importantForAccessibility="no"/>
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:orientation="vertical">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/widget_book" android:textColor="#DAC69F" android:textSize="11sp"/>
+        <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Алые паруса" android:fontFamily="serif" android:textColor="#FFF7E8"
+            android:textSize="18sp" android:maxLines="2" android:ellipsize="end"/>
+        <ProgressBar android:id="@+id/widget_bar" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_marginTop="5dp" android:layout_width="match_parent" android:layout_height="4dp"
+            android:max="100" android:progress="24" android:progressTint="#DBC79D" android:progressBackgroundTint="#687A71"
+            android:importantForAccessibility="no"/>
+        <LinearLayout android:id="@+id/widget_numbers" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="3dp" android:gravity="center_vertical">
+            <TextView android:id="@+id/widget_pages" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="33–34 из 138" android:textColor="#EFE9DA" android:textSize="12sp"/>
+            <TextView android:id="@+id/widget_percent" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginStart="4dp" android:text="24%" android:textColor="#DAC69F" android:textSize="12sp"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

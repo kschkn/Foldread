@@ -102,6 +102,8 @@ function backupMenu(){
 window.backupState=()=>{
   const data=Object.create(null);
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);data[k]=localStorage.getItem(k);}
+  if(window.Library?.readingMillis)data.readingMillis=String(Library.readingMillis());
+  if(window.Library?.readingDays){data.readingDays=Library.readingDays();data.weeklyGoal=String(Library.weeklyGoal());}
   for(const item of catalog()){
     const native=window.Library?.nativePlace?.(item.id);
     if(native && Number.isInteger(JSON.parse(native).chapter))data['pos.'+item.id]=native;
@@ -112,7 +114,21 @@ window.applyBackupState=json=>{
   const values=JSON.parse(json),old=new Map();
   try{
     for(const [k,v] of Object.entries(values)){
-      if(!/^(?:active|settings|profiles|menuHintSeen|readingPace|pocket|lexicon|shelfPairs|(?:pos|marks|words|annotations|clippings|completed|held|pair)\.(?:sails|[a-f0-9]{64})(?:\.(?:sails|[a-f0-9]{64}))?)$/.test(k))continue;
+      if(k==='readingMillis'){
+        const millis=JSON.parse(v);
+        if(!Number.isSafeInteger(millis)||millis<0)throw Error('Некорректное время чтения');
+        continue;
+      }
+      if(k==='weeklyGoal'){
+        const goal=JSON.parse(v);if(!Number.isInteger(goal)||goal<1||goal>10080)throw Error('Некорректная недельная цель');
+        continue;
+      }
+      if(k==='readingDays'){
+        const days=JSON.parse(v);
+        if(!days||typeof days!=='object'||Array.isArray(days)||Object.entries(days).some(([day,ms])=>!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isSafeInteger(ms)||ms<0))throw Error('Некорректная статистика чтения');
+        continue;
+      }
+      if(!/^(?:active|settings|profiles|menuHintSeen|readingPace|pocket|lexicon|shelfPairs|(?:pos|marks|words|annotations|clippings|completed|finishedDate|orientation|held|pair)\.(?:sails|[a-f0-9]{64})(?:\.(?:sails|[a-f0-9]{64}))?)$/.test(k))continue;
       const value=JSON.parse(v),kind=k.split('.')[0];
       const anchor=a=>a && ['chapter','p','offset'].every(p=>Number.isSafeInteger(a[p])&&a[p]>=0);
       const record=a=>a!==null && typeof a==='object' && !Array.isArray(a);
@@ -120,6 +136,8 @@ window.applyBackupState=json=>{
       const every=(list,test)=>Array.isArray(list)&&list.every(test);
       let valid=true;
       if(kind==='active')valid=id(value);
+      if(kind==='orientation')valid=['system','portrait','landscape'].includes(value);
+      if(kind==='finishedDate')valid=typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value);
       if(kind==='pos'||kind==='held')valid=anchor(value);
       if(kind==='marks')valid=every(value,anchor);
       if(['words','annotations','clippings'].includes(kind))valid=every(value,a=>anchor(a)&&typeof a.text==='string');

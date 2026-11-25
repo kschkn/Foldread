@@ -14,7 +14,8 @@ const icons = {
   contents:'M3 5h3m4 0h11M3 12h3m4 0h11M3 19h3m4 0h11',
   left:'M14 6l-6 6 6 6',right:'M10 6l6 6-6 6',close:'M6 6l12 12M18 6L6 18',
   plus:'M12 4v16M4 12h16',
-  tools:'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z'
+  tools:'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z',
+  stats:'M3 4v16h18 M7 16v-4 M12 16V7 M17 16V9'
 };
 function drawIcon(node) {
   node.setAttribute('aria-hidden','true');
@@ -40,13 +41,30 @@ if('pageNumbers' in settings || 'progressLine' in settings){
   write('settings',settings);
 }
 if(!fontNames.includes(settings.family)) settings.family=settings.family==='sans'?'Roboto':'Spectral';
-const romans=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
-const numeral = n => romans[n] || String(n+1);
+const romanDigits=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+function numeral(chapterIndex){
+  let value=chapterIndex+1,result='';
+  for(const [weight,symbol] of romanDigits){
+    result+=symbol.repeat(Math.floor(value/weight));
+    value%=weight;
+  }
+  return result;
+}
 let book, chapter=0, page=0, columns=1, pages=1, width=0, model, paragraphs=[], boundaries=new Map();
 let position={chapter:0,p:0,offset:0}, marks=[], animation=null, revision=0, resizeTimer;
 let pendingTurn=null, touch=null;
 let pagination=null, countingTimer=0,bookPercent=0;
 let chapterLengths=[], chapterStarts=[], totalLength=1, busyImport=false, toastTimer;
+let contentsEntries=[],sectionsByChapter=[],activeEntry=null;
+function sectionEntries(section){
+  const entries=(section.sections||[]).slice();
+  if(!entries.length||entries[0].p!==0)entries.unshift({p:0,title:section.title||section.paragraphs[0].slice(0,64)});
+  return entries;
+}
+function sectionAt(entries,p){
+  for(let i=entries.length-1;i>0;i--)if(entries[i].p<=p)return entries[i];
+  return entries[0];
+}
 const catalog = () => [sample,...Object.values(JSON.parse(window.Library?.catalog() || '{}'))];
 const textOf = () => book.chapters[chapter];
 
@@ -64,7 +82,7 @@ function applySettings() {
   style.setProperty('--align',settings.justify?'justify':'start');
   style.setProperty('--hyphen',settings.hyphenate?'auto':'manual');
 }
-async function openBook(id) {
+async function openBook(id,requestedMark=null) {
   const request=++revision;
   try {
     const response=await fetch(id==='sails'?'sails.json':'books/'+id+'.json');
@@ -74,7 +92,11 @@ async function openBook(id) {
     cancelTurn();
     releasePin();book=loaded;
     if(id==='sails') Object.assign(book,{cover:sample.cover,accent:sample.accent,images:[{src:sample.cover,name:'Обложка издания 1923 года'}]});
-    totalLength=0; chapterStarts=[];
+    totalLength=0; chapterStarts=[];contentsEntries=[];
+    sectionsByChapter=book.chapters.map((section,chapter)=>sectionEntries(section).map(s=>{
+      const entry={...s,chapter,offset:0,index:contentsEntries.length};
+      contentsEntries.push(entry);return entry;
+    }));
     chapterLengths=book.chapters.map(c=>{
       chapterStarts.push(totalLength);
       const size=c.paragraphs.reduce((n,t)=>n+t.length,0);
@@ -88,18 +110,21 @@ async function openBook(id) {
       return {chapter,p,offset:Math.max(0,Math.min(Number(at?.offset)||0,lines[p].length-1))};
     };
     const native=JSON.parse(window.Library?.nativePlace?.(id)||'{}');
-    position=clampAnchor(Number.isInteger(native.chapter)?native:read('pos.'+id,null));
+    marks=read('marks.'+id,[]).map(m=>({...clampAnchor(m),addedAt:m.addedAt||0}));
+    const bookmark=requestedMark&&marks.find(m=>m.chapter===requestedMark.chapter&&m.p===requestedMark.p&&m.offset===requestedMark.offset);
+    position=clampAnchor(bookmark || (Number.isInteger(native.chapter)?native:read('pos.'+id,null)));
     chapter=position.chapter;
-    marks=read('marks.'+id,[]).map(clampAnchor);
     document.body.classList.add('reading');
     restoreReadingTools(id);
     closeSheet();
     layout(position);
     write('active',id);
-    if(!Number.isInteger(native.chapter) || !['playing','loading'].includes(JSON.parse(window.Library?.audioState?.()||'{}').state))save(position);
+    publishLastBookmark();
+    if(bookmark || !Number.isInteger(native.chapter) || !['playing','loading'].includes(JSON.parse(window.Library?.audioState?.()||'{}').state))save(position);
     lastVoiceRevision=null;syncSpeech();
     showPocketIfNarrow();
     window.Library?.refreshPosture?.();
+    openWidgetStats();
     if(!read('menuHintSeen',false)) {
       notify('Коснитесь центра экрана, чтобы открыть меню');
       write('menuHintSeen',true);
@@ -109,12 +134,37 @@ async function openBook(id) {
     if(!book && id!=='sails') await openBook('sails');
   }
 }
-function chapterHeading() {
-  return makeHeading(chapter,textOf().title);
+let bookmarkRevision=0;
+async function publishLastBookmark(){
+  if(!window.Library?.widgetBookmark)return;
+  const request=++bookmarkRevision;
+  let latest=null;
+  for(const item of catalog()){
+    const current=item.id===book.id;
+    const list=current?marks:read('marks.'+item.id,[]);
+    for(const mark of list){
+      const time=Number(mark.addedAt)||0;
+      if(!latest||time>latest.time||(time===latest.time&&(current||latest.id===item.id))){
+        latest={id:item.id,title:item.title,chapter:mark.chapter,p:mark.p,offset:mark.offset,time};
+      }
+    }
+  }
+  if(latest){
+    try{
+      const volume=latest.id===book.id?book:await loadVolume(latest.id);
+      latest.label=sectionAt(sectionEntries(volume.chapters[latest.chapter]),latest.p).title;
+    }catch{latest.label='';}
+  }
+  if(request===bookmarkRevision)Library.widgetBookmark(latest?JSON.stringify(latest):'');
 }
-function makeHeading(number,title) {
+function openWidgetMark(){
+  const raw=window.Library?.takeWidgetBookmark?.();
+  if(!raw)return false;
+  const mark=JSON.parse(raw);openBook(mark.id,mark);return true;
+}
+function makeHeading(title) {
   const head=el('div','chapter');
-  head.append(el('small','', 'Глава '+numeral(number)),el('h1','',title),el('div','orn','✦'));
+  head.append(el('h1','',title),el('div','orn','✦'));
   return head;
 }
 function leafFrame(side, index) {
@@ -132,8 +182,11 @@ function folioNumber(index){
 }
 function chapterFlow(index){
   const flow=el('div','flow'),section=book.chapters[index];
-  flow.append(makeHeading(index,section.title));
-  for(const [i,text] of section.paragraphs.entries())flow.append(el('p',i===0?'opening':'',typeset(text)));
+  if(section.title)flow.append(makeHeading(section.title));
+  for(const [i,text] of section.paragraphs.entries()){
+    if(section.inlineHeading?.p===i)flow.append(makeHeading(section.inlineHeading.title));
+    flow.append(el('p',i===0?'opening':'',typeset(text)));
+  }
   return flow;
 }
 function indexChapter(height){
@@ -181,12 +234,21 @@ function updateBookProgress(){
   const location=range||'Подсчёт страниц…';
   $('#bookProgress').textContent=location+' · '+bookPercent+'%';
   $('#menuBookProgress').textContent=location;
-  $('#chapterNumber').textContent='Глава '+numeral(chapter)+' из '+book.chapters.length;
+  queueMicrotask(publishWidgetProgress);
   if(settings.pageFooter==='numbers')for(const leaf of $('#leaves').children){
     const folio=leaf.querySelector('.folio');if(folio)folio.textContent=folioNumber(Number(leaf.dataset.page));
   }
   const preview=$('#sheet[open] .typePreview');
   if(preview)paintTypePreview(preview);
+}
+let lastWidgetProgress='';
+function publishWidgetProgress(){
+  if(!book||pendingTurn||fanSession||pagePin||!window.Library?.widgetProgress)return;
+  const range=pagination?.starts?$('#menuBookProgress').textContent:'';
+  const snapshot=JSON.stringify([book.id,book.title,book.cover||'',range,bookPercent]);
+  if(snapshot===lastWidgetProgress)return;
+  lastWidgetProgress=snapshot;
+  Library.widgetProgress(book.id,book.title,book.cover||'',range,bookPercent);
 }
 function layout(at) {
   if(!book) return;
@@ -194,7 +256,10 @@ function layout(at) {
   closeNote();
   cancelTurn();
   columns=pageColumns();
-  $('#desk').classList.toggle('innerScreen',innerDisplay());
+  const inner=innerDisplay();
+  $('#desk').classList.toggle('innerScreen',inner);
+  const count=$('#menuBookProgress'),host=inner?$('#meterGroup'):$('#contents > span');
+  if(count.parentElement!==host)host.append(count);
   $('#spread').classList.toggle('two',columns===2);
   const frame=leafFrame('left',0);
   $('#leaves').replaceChildren(frame);
@@ -211,7 +276,7 @@ function layout(at) {
   boundaries=new Map();
   page=alignPage(at==='end' ? pages-1 : pageOf(at));
   indexChapter(rect.height);
-  render();
+  render(at);
   syncFold();
 }
 const alignPage = n => Math.floor(Math.max(0,Math.min(n,pages-1))/columns)*columns;
@@ -255,12 +320,13 @@ function leafAt(side,index) {
   if(index>=pages) return leaf;
   const start=anchor(index), end=anchor(index+1);
   const visible=el('div','flow');
-  if(index===0) visible.append(chapterHeading());
+  if(index===0 && textOf().title)visible.append(makeHeading(textOf().title));
   for(let p=start.p;p<=end.p && p<paragraphs.length;p++) {
     const from=p===start.p?start.offset:0;
     const until=p===end.p?end.offset:undefined;
     const excerpt=paragraphs[p].textContent.slice(from,until);
     if(!excerpt.length) continue;
+    if(from===0&&textOf().inlineHeading?.p===p)visible.append(makeHeading(textOf().inlineHeading.title));
     const paragraph=el('p',index===0 && p===0?'opening':'',excerpt);
     paragraph.dataset.paragraph=p;
     paragraph.dataset.from=from;
@@ -273,17 +339,19 @@ function leafAt(side,index) {
   if(marks.some(m=>m.chapter===chapter && pageOf(m)===index)) leaf.append(el('div','ribbon'));
   return leaf;
 }
-function render() {
+function render(at) {
   const leaves=[leafAt('left',page)];
   if(columns===2) leaves.push(leafAt('right',page+1));
   $('#leaves').replaceChildren(...leaves);
-  updateControls();
+  updateControls(at);
 }
-function updateControls() {
-  $('#chapterName').textContent=textOf().title;
+function updateControls(at) {
   $('#prev').disabled=page===0 && chapter===0;
   $('#next').disabled=page+columns>=pages && chapter===book.chapters.length-1;
   const pos=anchor(page);
+  activeEntry=sectionAt(sectionsByChapter[chapter],at?.p??pos.p);
+  $('#chapterName').textContent=activeEntry.title;
+  $('#chapterNumber').textContent=numeral(activeEntry.index)+' / '+numeral(contentsEntries.length-1);
   let chars=chapterStarts[chapter]+pos.offset;
   for(let i=0;i<pos.p;i++) chars+=textOf().paragraphs[i].length;
   const percent=$('#next').disabled?100:Math.floor(100*chars/Math.max(1,totalLength));
@@ -303,7 +371,10 @@ function save(at) {
   if(pagePin)return;
   position=at;write('pos.'+book.id,position);
   window.Library?.savePlace?.(book.id,at.chapter,at.p,at.offset);
-  if(page+columns>=pages && chapter===book.chapters.length-1) write('completed.'+book.id,true);
+  if(page+columns>=pages && chapter===book.chapters.length-1 && !read('completed.'+book.id,false)){
+    write('finishedDate.'+book.id,readingDate(new Date()));
+    write('completed.'+book.id,true);
+  }
 }
 function cancelTurn() {
   if(pendingTurn) {
@@ -360,6 +431,7 @@ function settleTurn(commit) {
       save(anchor(page));
       $('#leaves').replaceChildren(...pendingTurn.destination);
       removeTurnLayers();
+      publishWidgetProgress();
     } else cancelTurn();
     restartReadingClock();
   };
@@ -384,8 +456,8 @@ function notify(message) {
 }
 function toggleMark(index=null) {
   const found=index===null?visibleMark():marks.findIndex(m=>m.chapter===chapter && pageOf(m)===index);
-  if(found!==-1) marks.splice(found,1); else marks.push({...anchor(index??page)});
-  write('marks.'+book.id,marks); render(); notify(found===-1?'Закладка добавлена':'Закладка снята');
+  if(found!==-1) marks.splice(found,1); else marks.push({...anchor(index??page),addedAt:Date.now()});
+  write('marks.'+book.id,marks);publishLastBookmark();render();notify(found===-1?'Закладка добавлена':'Закладка снята');
 }
 function closeSheet() {
   if(!$('#sheet').open) return false;
@@ -393,6 +465,19 @@ function closeSheet() {
 }
 function syncFold() {
   window.Library?.enableFold?.(Boolean(book && innerDisplay() && (pair?.peek || settings.liveSpine || settings.fold)));
+  syncReadingTime();
+  syncBookOrientation();
+}
+let lastOrientation;
+function syncBookOrientation(){
+  const mode=book&&!$('#sheet[open].shelfsheet')?read('orientation.'+book.id,'system'):'system';
+  if(mode===lastOrientation)return;
+  lastOrientation=mode;window.Library?.bookOrientation?.(mode);
+}
+function syncReadingTime(){
+  const sheet=$('#sheet');
+  const reading=sheet.open?sheet.classList.contains('workSheet'):(document.body.classList.contains('reading')||pair);
+  window.Library?.setReadingVisible?.(Boolean(book&&!document.hidden&&!fanSession&&reading));
 }
 function toggleMenu() {
   document.body.classList.toggle('reading');
@@ -412,10 +497,11 @@ window.handleBack=()=>{
 window.foldTurn=()=>{
   if(!touch && !pagePin && !voiceSession && !standMode && book && !fanSession && !pickingText && !pair && innerDisplay() && settings.fold && !noteOpen() && !$('#sheet').open && document.body.classList.contains('reading')) turn(settings.foldDirection===-1?-1:1);
 };
-function panel(title) {
+function panel(title,sheetClass) {
   disposeWorkspace();
   closeNote();
-  $('#sheet').classList.remove('typesheet','shelfsheet','widesheet','gallerysheet','workSheet','toolsSheet');
+  $('#sheet').classList.remove('typesheet','shelfsheet','widesheet','gallerysheet','workSheet','toolsSheet','statsSheet');
+  if(sheetClass)$('#sheet').classList.add(sheetClass);
   restartReadingClock();
   $('#sheet h2').textContent=title;
   const area=$('#panel'); area.replaceChildren();
@@ -445,18 +531,21 @@ function contents(tab='chapters') {
   tabs.append(button('Оглавление',tab==='chapters'?'selected':'',()=>contents()),button('Закладки · '+marks.length,tab==='marks'?'selected':'',()=>contents('marks')),button('Поиск',tab==='search'?'selected':'',()=>contents('search')));
   area.append(tabs);
   if(tab==='search') {spreadSearch();return;}
-  if(tab==='chapters') book.chapters.forEach((c,i)=>area.append(row(c.title,'',el('i','ordinal',numeral(i)),()=>jump({chapter:i,p:0,offset:0}),i===chapter)));
+  if(tab==='chapters'){
+    for(const entry of contentsEntries)area.append(row(entry.title,'',el('i','ordinal',numeral(entry.index)),()=>jump({chapter:entry.chapter,p:entry.p,offset:0}),entry===activeEntry));
+  }
   else {
     const marked=visibleMark()!==-1;
     area.append(button(marked?'Снять закладку с этой страницы':'Поставить закладку здесь','primary bookmarkAction',()=>{toggleMark();contents('marks');}));
     if(!marks.length) area.append(el('p','empty','Потяните вниз от верха страницы. Сохранённое место появится здесь.'));
     for(const m of marks.slice().sort((a,b)=>a.chapter-b.chapter||a.p-b.p||a.offset-b.offset)) {
       const c=book.chapters[m.chapter];
-      area.append(row(c.title,(c.paragraphs[m.p]||'').slice(m.offset,m.offset+80),icon('bookmark'),()=>jump(m)));
+      area.append(row(sectionAt(sectionsByChapter[m.chapter],m.p).title,(c.paragraphs[m.p]||'').slice(m.offset,m.offset+80),icon('bookmark'),()=>jump(m)));
     }
   }
 }
 $('#library').onclick=library;$('#contents').onclick=()=>contents();$('#settings').onclick=()=>showTypography();
+$('#stats').onclick=()=>showStatistics();
 $('#extras').onclick=editionMenu;
 $('#timeLeft').onclick=showTimeLeft;$('#returnPlace').onclick=returnToPlace;
 $('#close').onclick=closeSheet;$('#sheet').onclick=e=>{if(e.target===$('#sheet')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientY<r.top||e.clientX>r.right||e.clientY>r.bottom)closeSheet();}};
@@ -547,7 +636,7 @@ document.onkeydown=e=>{
 };
 window.onresize=onReaderResize;
 $('#sheet').addEventListener('close',()=>{if(!$('#sheet').open)disposeWorkspace();syncFold();restartReadingClock();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden) abortTouch();else scheduleCount();restartReadingClock();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden) abortTouch();else scheduleCount();restartReadingClock();syncReadingTime();});
 document.fonts.addEventListener('loadingdone',()=>{
   if(!book)return;
   pagination=null;clearTimeout(countingTimer);countingTimer=0;onReaderResize();
@@ -555,5 +644,5 @@ document.fonts.addEventListener('loadingdone',()=>{
 applySettings();
 window.Library?.setReaderBrightness?.(settings.brightness);
 document.fonts.load('18px "'+settings.family+'"').then(()=>{
-  if(!resumeRestore())openBook(window.Library?.audioTarget?.()||read('active','sails'));
+  if(!resumeRestore()&&!openWidgetMark())openBook(window.Library?.audioTarget?.()||read('active','sails'));
 });

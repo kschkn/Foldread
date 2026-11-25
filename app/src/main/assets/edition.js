@@ -29,14 +29,14 @@ async function openFromShelf(item,source) {
   motion.onfinish=()=>copy.remove();
 }
 function showShelf(series=null) {
-  const area=panel(series||'Библиотека');$('#sheet').classList.add('shelfsheet');
+  const area=panel(series||'Библиотека','shelfsheet');
   const all=catalog();
   if(series) area.append(button('‹ Все книги','backlink',()=>showShelf()));
   else {
     const current=all.find(x=>x.id===book?.id)||sample;
     const hero=el('section','shelfHero'),art=coverArt(current),image=el('div','shelfIllustration'),copy=el('div','shelfCopy');
     copy.append(el('small','settingLabel','Сейчас читаю'),el('h3','',current.title),el('p','',current.author));
-    if(book)copy.append(el('small','heroChapter','Глава '+numeral(chapter)+' · '+textOf().title));
+    if(activeEntry)copy.append(el('small','heroChapter',activeEntry.title));
     copy.append(button('Продолжить чтение','heroButton',()=>openFromShelf(current,art)));
     image.append(art);hero.append(image,copy);area.append(hero);
   }
@@ -141,7 +141,7 @@ function listNotes() {
   const notes=[...notesForBook()].sort((a,b)=>a.chapter-b.chapter||a.p-b.p);
   if(!notes.length)area.append(el('p','empty','Выберите абзац и запишите первую пометку.'));
   area.append(button('Добавить у абзаца','toolRow',()=>pickText('note')));
-  for(const n of notes) area.append(row(book.chapters[n.chapter].title,n.text,el('i','ordinal',numeral(n.chapter)),()=>{
+  for(const n of notes) area.append(row(sectionAt(sectionsByChapter[n.chapter],n.p).title,n.text,icon('bookmark'),()=>{
     jump(n);editNote(n.p,n);
   }));
 }

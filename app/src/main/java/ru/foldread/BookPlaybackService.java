@@ -28,6 +28,8 @@ public final class BookPlaybackService extends MediaBrowserService {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
     private AudioLibrary library;
+    private List<AudioLibrary.Section> contents=Collections.emptyList();
+    private int sectionIndex;
     private ReaderVoice voice;
     private MediaSession session;
     private PowerManager.WakeLock wake;
@@ -149,7 +151,7 @@ public final class BookPlaybackService extends MediaBrowserService {
                 if(!AudioLibrary.RESUME.equals(media)){
                     String[] parts=media==null?new String[0]:media.split("/");
                     if(parts.length==2&&parts[0].equals("continue"))target=parts[1];
-                    else if(parts.length==3&&parts[0].equals("chapter")){target=parts[1];at=AudioLibrary.anchor(Integer.parseInt(parts[2]),0,0);}
+                    else if((parts.length==3||parts.length==4)&&parts[0].equals("chapter")){target=parts[1];at=AudioLibrary.anchor(Integer.parseInt(parts[2]),parts.length==4?Integer.parseInt(parts[3]):0,0);}
                     else throw new IllegalArgumentException();
                 }
             }else{
@@ -167,15 +169,16 @@ public final class BookPlaybackService extends MediaBrowserService {
         int request=++generation;
         voice.stop();
         boolean cached=book!=null&&target.equals(id);
-        if(!cached){book=null;title="Bookfold";author="";heading="Открываем книгу";}
+        if(!cached){book=null;contents=Collections.emptyList();title="Bookfold";author="";heading="Открываем книгу";}
+        sectionIndex=-1;
         id=target;chapter=Math.max(0,at.optInt("chapter"));p=Math.max(0,at.optInt("p"));offset=Math.max(0,at.optInt("offset"));end=offset;
         limit=stopAtEnd;library.prefs.edit().putBoolean("limit",limit).apply();
         state="loading";error="";session.setActive(true);publish(false);updateNotification();
         if(cached){nextPhrase();return;}
         io.execute(()->{
-            try{JSONObject loaded=library.read(target);main.post(()->{
+            try{JSONObject loaded=library.read(target);List<AudioLibrary.Section> toc=AudioLibrary.sections(loaded);main.post(()->{
                 if(request!=generation)return;
-                book=loaded;title=book.optString("title");author=book.optString("author");nextPhrase();
+                book=loaded;contents=toc;title=book.optString("title");author=book.optString("author");nextPhrase();
             });}catch(Exception ex){main.post(()->{if(request==generation)pause("Не удалось прочитать книгу");});}
         });
     }
@@ -189,7 +192,6 @@ public final class BookPlaybackService extends MediaBrowserService {
                 if(p>=lines.length()){
                     if(chapter+1>=chapters.length()){finishPlayback();return;}
                     chapter++;p=0;offset=0;
-                    if(limit){end=0;heading=chapters.getJSONObject(chapter).optString("title");pause("");return;}
                     continue;
                 }
                 String line=lines.getString(p);
@@ -200,8 +202,16 @@ public final class BookPlaybackService extends MediaBrowserService {
                 else if(end<line.length()){int space=line.lastIndexOf(' ',end);if(space>offset)end=space+1;}
                 String text=line.substring(offset,end);
                 if(text.trim().isEmpty()){offset=end;continue;}
-                String nextHeading=section.optString("title");
-                boolean changed=!nextHeading.equals(heading)||!state.equals("playing");
+                int previous=sectionIndex;
+                if(sectionIndex<0)sectionIndex=0;
+                while(sectionIndex+1<contents.size()){
+                    AudioLibrary.Section next=contents.get(sectionIndex+1);
+                    if(next.chapter>chapter||next.chapter==chapter&&next.p>p)break;
+                    sectionIndex++;
+                }
+                String nextHeading=contents.get(sectionIndex).title;
+                if(limit&&previous>=0&&sectionIndex!=previous){end=offset;heading=nextHeading;pause("");return;}
+                boolean changed=previous!=sectionIndex||!nextHeading.equals(heading)||!state.equals("playing");
                 heading=nextHeading;state="playing";publish(true);
                 if(changed){metadata();updateNotification();}
                 wake.acquire(10*60*1000L);
@@ -211,21 +221,21 @@ public final class BookPlaybackService extends MediaBrowserService {
     }
     private void skip(int delta){
         if(book==null)return;
-        int target=chapter+delta;
-        if(target<0||target>=book.optJSONArray("chapters").length())return;
-        request("media","chapter/"+id+"/"+target);
+        int target=sectionIndex+delta;
+        if(target<0||target>=contents.size())return;
+        request("media",contents.get(target).mediaId(id));
     }
     private void metadata(){
         session.setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,heading)
             .putString(MediaMetadata.METADATA_KEY_ARTIST,author).putString(MediaMetadata.METADATA_KEY_ALBUM,title)
             .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE,heading).putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,title)
-            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID,"chapter/"+id+"/"+chapter).build());
+            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID,sectionIndex>=0&&sectionIndex<contents.size()?contents.get(sectionIndex).mediaId(id):"chapter/"+id+"/"+chapter).build());
     }
     private void transport(){
         long actions=PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_PLAY_FROM_MEDIA_ID|PlaybackState.ACTION_PLAY_FROM_SEARCH|PlaybackState.ACTION_STOP;
         if(active())actions|=PlaybackState.ACTION_PAUSE;
-        if(book!=null&&chapter>0)actions|=PlaybackState.ACTION_SKIP_TO_PREVIOUS;
-        if(book!=null&&chapter+1<book.optJSONArray("chapters").length())actions|=PlaybackState.ACTION_SKIP_TO_NEXT;
+        if(sectionIndex>0)actions|=PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+        if(sectionIndex>=0&&sectionIndex+1<contents.size())actions|=PlaybackState.ACTION_SKIP_TO_NEXT;
         int value=state.equals("loading")?PlaybackState.STATE_BUFFERING:state.equals("playing")?PlaybackState.STATE_PLAYING:state.equals("paused")?PlaybackState.STATE_PAUSED:PlaybackState.STATE_STOPPED;
         PlaybackState.Builder b=new PlaybackState.Builder().setActions(actions).setState(error.isEmpty()?value:PlaybackState.STATE_ERROR,PlaybackState.PLAYBACK_POSITION_UNKNOWN,active()?1f:0f);
         if(!error.isEmpty())b.setErrorMessage(error);

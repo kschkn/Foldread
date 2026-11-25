@@ -1,0 +1,16 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_paper" android:orientation="vertical" android:gravity="center_vertical" android:padding="12dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_week"
+        android:textColor="#65543C" android:textSize="12sp"/>
+    <TextView android:id="@+id/widget_week_total" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="68 из 140 мин" android:textColor="#253B34" android:fontFamily="serif" android:textSize="19sp"/>
+    <ProgressBar android:id="@+id/widget_bar" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp" android:layout_marginTop="4dp"
+        android:max="140" android:progress="68" android:progressTint="#476754" android:progressBackgroundTint="#CDC7B5"
+        android:importantForAccessibility="no"/>
+    <LinearLayout android:id="@+id/widget_days" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center"
+            android:text="Пн　Вт　Ср　Чт　Пт　Сб　Вс" android:textColor="#655D4D" android:textSize="11sp"/>
+    </LinearLayout>
+</LinearLayout>

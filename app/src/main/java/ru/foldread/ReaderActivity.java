@@ -48,6 +48,10 @@ public final class ReaderActivity extends Activity implements SensorEventListene
     private File backupSnapshot;
     private static final int SAVE_BACKUP=42, LOAD_BACKUP=43, PICK_DICTIONARY=44;
     private AudioLibrary audioLibrary;
+    private ReadingClock readingClock;
+    private boolean readingVisible;
+    private volatile boolean openWidgetBookmark;
+    private volatile boolean showStats;
     private ReaderDictionary dictionary;
     private boolean showAudio;
     private final android.content.SharedPreferences.OnSharedPreferenceChangeListener audioUpdates=(prefs,key)->{
@@ -81,8 +85,11 @@ public final class ReaderActivity extends Activity implements SensorEventListene
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         audioLibrary=new AudioLibrary(this);
+        readingClock=new ReadingClock(this,audioLibrary.prefs);
         dictionary=new ReaderDictionary(getAssets());
         showAudio="ru.foldread.SHOW_AUDIO".equals(getIntent().getAction());
+        openWidgetBookmark=ReadingWidgets.OPEN_MARK.equals(getIntent().getAction());
+        showStats=state==null&&ReadingWidgets.OPEN_STATS.equals(getIntent().getAction());
         windowTracker=new androidx.window.java.layout.WindowInfoTrackerCallbackAdapter(androidx.window.layout.WindowInfoTracker.getOrCreate(this));
         if(state!=null && state.containsKey("backupSnapshot"))backupSnapshot=new File(getCacheDir(),state.getString("backupSnapshot"));
         if (state != null && state.getString("pendingCard") != null)
@@ -174,6 +181,32 @@ public final class ReaderActivity extends Activity implements SensorEventListene
         @JavascriptInterface public String definition(String word){return dictionary.lookup(word);}
         @JavascriptInterface public String audioState(){return BookPlaybackService.snapshot(audioLibrary);}
         @JavascriptInterface public String nativePlace(String id){return audioLibrary.place(id).toString();}
+        @JavascriptInterface public void bookOrientation(String mode){
+            int requested="portrait".equals(mode)?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT:
+                "landscape".equals(mode)?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+            runOnUiThread(()->{if(!isDestroyed()&&getRequestedOrientation()!=requested)setRequestedOrientation(requested);});
+        }
+        @JavascriptInterface public void widgetProgress(String id,String title,String cover,String range,int percent){
+            ReadingWidgets.saveBook(ReaderActivity.this,id,title,cover,range,percent);
+        }
+        @JavascriptInterface public void setReadingVisible(boolean visible){
+            runOnUiThread(()->{readingVisible=visible;updateReadingClock();});
+        }
+        @JavascriptInterface public long readingMillis(){return audioLibrary.prefs.getLong("readingMillis",0);}
+        @JavascriptInterface public String readingDays(){return ReadingClock.history(audioLibrary.prefs).toString();}
+        @JavascriptInterface public boolean takeWidgetStats(){boolean open=showStats;showStats=false;return open;}
+        @JavascriptInterface public int weeklyGoal(){return ReadingWidgets.weeklyGoal(ReaderActivity.this);}
+        @JavascriptInterface public void widgetBookmark(String json){
+            android.content.SharedPreferences prefs=getSharedPreferences("reading-widget",MODE_PRIVATE);
+            if(json.equals(prefs.getString("bookmark","")))return;
+            prefs.edit().putString("bookmark",json).apply();
+            ReadingWidgets.refresh(ReaderActivity.this,ReadingWidgets.Bookmark.class);
+        }
+        @JavascriptInterface public String takeWidgetBookmark(){
+            if(!openWidgetBookmark)return "";
+            openWidgetBookmark=false;
+            return getSharedPreferences("reading-widget",MODE_PRIVATE).getString("bookmark","");
+        }
         @JavascriptInterface public void savePlace(String id,int chapter,int p,int offset){audioLibrary.save(id,AudioLibrary.anchor(chapter,p,offset));}
         @JavascriptInterface public String audioTarget(){
             if(!showAudio)return "";
@@ -211,7 +244,16 @@ public final class ReaderActivity extends Activity implements SensorEventListene
                 java.util.Iterator<String> keys=values.keys();
                 while(keys.hasNext()){String k=keys.next();if(k.startsWith("pos.") && AudioLibrary.valid(k.substring(4)))restored.putString(k,values.getString(k));}
                 if(values.has("active")){String id=(String)new org.json.JSONTokener(values.getString("active")).nextValue();if(AudioLibrary.valid(id))restored.putString("current",id);}
+                if(values.has("readingMillis"))restored.putLong("readingMillis",values.getLong("readingMillis"));
+                if(values.has("readingDays")){
+                    JSONObject days=new JSONObject(values.getString("readingDays"));
+                    for(String k:audioLibrary.prefs.getAll().keySet())if(k.startsWith("day."))restored.remove(k);
+                    for(java.util.Iterator<String> it=days.keys();it.hasNext();){String day=it.next();restored.putLong("day."+day,days.getLong(day));}
+                }
+                if(values.has("weeklyGoal"))restored.putInt("weeklyGoal",values.getInt("weeklyGoal"));
                 if(!restored.commit())return false;
+                ReadingWidgets.refresh(ReaderActivity.this,ReadingWidgets.Time.class);
+                ReadingWidgets.refresh(ReaderActivity.this,ReadingWidgets.Week.class);
             }catch(Exception ex){return false;}
             if(!accepted)try{
                 JSONObject catalog=new JSONObject(prefs.getString("catalog","{}"));
@@ -298,6 +340,7 @@ public final class ReaderActivity extends Activity implements SensorEventListene
     @Override public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
         if (focus) immersive();
+        updateReadingClock();
     }
 
     private void updateSensor() {
@@ -327,11 +370,21 @@ public final class ReaderActivity extends Activity implements SensorEventListene
         super.onConfigurationChanged(next);foldAxis=-1;callJs("window.foldAxisChanged?.()");
     }
     @Override protected void onStop(){windowTracker.removeWindowLayoutInfoListener(posture);super.onStop();}
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);showAudio="ru.foldread.SHOW_AUDIO".equals(intent.getAction());callJs("window.audioOpened?.()");}
+    @Override protected void onNewIntent(Intent intent){
+        super.onNewIntent(intent);setIntent(intent);showAudio="ru.foldread.SHOW_AUDIO".equals(intent.getAction());
+        openWidgetBookmark=ReadingWidgets.OPEN_MARK.equals(intent.getAction());
+        showStats=ReadingWidgets.OPEN_STATS.equals(intent.getAction());
+        if(showStats)callJs("if(typeof book!=='undefined' && book)openWidgetStats()");
+        else if(openWidgetBookmark)callJs("if(typeof book!=='undefined' && book && !openWidgetMark())openBook(read('active',book.id))");
+        else if(ReadingWidgets.OPEN_READER.equals(intent.getAction()))callJs("if(typeof book!=='undefined' && book)openBook(read('active',book.id))");
+        else callJs("window.audioOpened?.()");
+    }
+    private void updateReadingClock(){if(readingClock!=null)readingClock.active(resumed&&hasWindowFocus()&&readingVisible);}
     @Override protected void onResume() { super.onResume(); resumed = true; updateSensor();
-        audioLibrary.prefs.registerOnSharedPreferenceChangeListener(audioUpdates);callJs("window.audioOpened?.()");}
+        updateReadingClock();audioLibrary.prefs.registerOnSharedPreferenceChangeListener(audioUpdates);callJs("window.audioOpened?.()");}
     @Override protected void onPause() {
         resumed = false;
+        updateReadingClock();
         audioLibrary.prefs.unregisterOnSharedPreferenceChangeListener(audioUpdates);
         updateSensor();
         super.onPause();
@@ -465,7 +518,7 @@ public final class ReaderActivity extends Activity implements SensorEventListene
             JSONObject catalog = new JSONObject(prefs.getString("catalog", "{}"));
             File bookFile = new File(getFilesDir(), id + ".json");
             JSONObject metadata = catalog.optJSONObject(id);
-            if (!bookFile.isFile() || metadata == null || metadata.optInt("schema") < 4) {
+            if (!bookFile.isFile() || metadata == null || metadata.optInt("schema") < BookImporter.SCHEMA) {
                 JSONObject book = BookImporter.read(temp, name, id, getFilesDir());
                 staged = File.createTempFile("book-", ".tmp", getFilesDir());
                 try (FileOutputStream out = new FileOutputStream(staged)) {

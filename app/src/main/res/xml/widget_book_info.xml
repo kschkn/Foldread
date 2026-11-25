@@ -1,0 +1,5 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="200dp" android:minHeight="100dp" android:targetCellWidth="4" android:targetCellHeight="2"
+    android:minResizeWidth="185dp" android:minResizeHeight="96dp" android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/widget_book" android:previewLayout="@layout/widget_book"
+    android:description="@string/widget_book_description" android:widgetCategory="home_screen" android:updatePeriodMillis="0"/>

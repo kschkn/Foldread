@@ -58,6 +58,7 @@ public class PlaybackChecks extends Instrumentation {
         Bundle report=new Bundle();boolean passed=false;
         try{
             Context context=getTargetContext();
+            ChapterChecks.run(context);
             checkRoundIcon(context);
             String auto="com.google.android.projection.gearhead";
             try{
@@ -79,6 +80,7 @@ public class PlaybackChecks extends Instrumentation {
             require(children("shelf").stream().anyMatch(b->"book/sails".equals(b.getMediaId())),"Book missing");
             List<MediaBrowser.MediaItem> chapters=children("book/sails");
             require(chapters.size()>3&&chapters.get(1).isPlayable(),"Chapter list missing");
+            require("Грэй".contentEquals(chapters.get(2).getDescription().getTitle()),"Source chapter title missing");
             MediaController.TransportControls controls=controller.getTransportControls();
             controls.playFromMediaId(chapters.get(1).getMediaId(),null);
             await(PlaybackState.STATE_PLAYING,"chapter/sails/0");

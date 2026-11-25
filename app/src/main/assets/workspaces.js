@@ -21,7 +21,7 @@ function desk(title,labels){
   const observers=[];
   const observer=new ResizeObserver(()=>observers.forEach(fn=>fn()));
   workspace={area,body,sides,show,observer,volume:book,watch(target,fn){observers.push(fn);observer.observe(target);}};
-  return workspace;
+  syncReadingTime();return workspace;
 }
 function readingPane(w,side,volume=book,at=position,track=false,label='Текст'){
   const pane=new ParallelPane(volume,side,0,p=>{if(track)w.readAt=p.at;},label);
@@ -192,7 +192,7 @@ function tableReading(){
   const choose=el('select','bookSearch'),all=catalog();choose.setAttribute('aria-label','Книга второй стороны');
   for(const b of all)choose.add(new Option(b.title,b.id));choose.value=book.id;right.prepend(choose);
   choose.onchange=async()=>{const id=choose.value;try{const b=await loadVolume(id);if(workspace!==w||id!==choose.value)return;
-    second.volume=b;second.chapter=null;second.chapters.replaceChildren();b.chapters.forEach((c,i)=>second.chapters.add(new Option(c.title,i)));
+    second.setVolume(b);
     right.querySelector('.pairBook b').textContent=b.title;second.go(id===book.id?first.at:read('pos.'+id,{chapter:0,p:0,offset:0}));
   }catch{notify('Не удалось открыть книгу');}};
 }
