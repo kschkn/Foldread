@@ -32,13 +32,14 @@
   </header>
   <main id="desk">
     <section id="spread" aria-label="Страницы книги"><div id="leaves"></div></section>
-    <div id="bookProgress" aria-label="Прогресс по всей книге"></div>
+    <div id="bookProgress"></div>
   </main>
   <footer class="controls">
     <button id="contents" aria-label="Оглавление и закладки">
       <i data-icon="contents"></i><span><small id="chapterNumber"></small><strong id="chapterName"></strong><small id="menuBookProgress"></small></span>
     </button>
-    <button class="progress" id="timeLeft" aria-label="Время до конца главы"><span id="estimate"></span><span class="track"><span id="bar"></span></span></button>
+    <div id="bookMeter" role="progressbar" aria-label="Прочитано по всей книге" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="track"><span id="bar"></span></span><span id="menuPercent"></span></div>
+    <button id="timeLeft"><span>До конца главы</span><span id="estimate"></span></button>
     <div class="arrows"><button id="prev" aria-label="Назад"><i data-icon="left"></i></button><button id="next" aria-label="Вперёд"><i data-icon="right"></i></button></div>
   </footer>
   <button id="returnPlace" hidden>↶ К месту чтения</button>

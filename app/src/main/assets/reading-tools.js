@@ -179,22 +179,38 @@ function spreadDescription(){
   return settings.spreadMode==='one'?'Одна страница в обеих ориентациях.':settings.spreadMode==='two'?'Две страницы в обеих ориентациях.':'Горизонтальный сгиб — одна страница, вертикальный — две.';
 }
 function paintTypePreview(preview){
-  const count=pageColumns();
-  preview.dataset.columns=count;
-  const lines=textOf().paragraphs,from=position.p;
-  preview.replaceChildren();
-  for(let i=0;i<count;i++){
+  preview.dataset.columns=columns;
+  const leaves=[];
+  for(const pageNode of $('#leaves').children){
     const leaf=el('div','previewLeaf');
-    leaf.append(el('small','',textOf().title),el('p','',lines[(from+i)%lines.length]));
-    preview.append(leaf);
+    const body=el('div','previewBody'),excerpt=el('div','previewExcerpt');
+    const heading=pageNode.querySelector('.chapter h1');
+    if(heading)leaf.append(el('div','previewTitle',heading.textContent));
+    for(const p of pageNode.querySelectorAll('.flow p')){
+      const para=el('p','',p.textContent);
+      if(p.dataset.from!=='0'||p.classList.contains('opening'))para.style.textIndent='0';
+      excerpt.append(para);
+    }
+    body.append(excerpt);leaf.append(body);
+    if(settings.pageFooter==='numbers')leaf.append(el('small','previewFolio',pageNode.querySelector('.folio').textContent));
+    leaves.push(leaf);
+  }
+  preview.replaceChildren(...leaves);
+  if(settings.pageFooter==='progress'){
+    const footer=el('small','previewProgress',$('#bookProgress').textContent);
+    footer.classList.toggle('onRight',innerDisplay());preview.append(footer);
+  }
+  for(const body of preview.querySelectorAll('.previewBody')){
+    const excerpt=body.firstChild,lineHeight=parseFloat(getComputedStyle(excerpt).lineHeight);
+    excerpt.style.maxHeight=Math.floor(body.clientHeight/lineHeight)*lineHeight+'px';
   }
 }
 function showTypography(tab='Страница'){
   const area=panel('Настройки чтения');
   $('#sheet').classList.add('typesheet');
   const aside=el('section','typeSample'), preview=el('div','typePreview');
-  aside.append(el('span','settingLabel','Так выглядит страница'),preview);area.append(aside);
-  paintTypePreview(preview);
+  preview.setAttribute('aria-hidden','true');
+  aside.append(el('span','settingLabel','Предпросмотр'),preview);area.append(aside);
   const controls=el('section','typeControls'),tabs=el('div','tabs settingTabs');
   for(const name of ['Страница','Шрифт','Экран']){
     const t=button(name,name===tab?'selected':'',()=>showTypography(name));t.setAttribute('aria-pressed',name===tab);tabs.append(t);
@@ -211,7 +227,7 @@ function showTypography(tab='Страница'){
     group.setAttribute('role','group');group.setAttribute('aria-label',title);
     for(const [name,val] of items){
       const option=button(name,settings[key]===val?'selected':'',()=>{
-        reflowSettings({[key]:val});paintTypePreview(preview);
+        reflowSettings({[key]:val});
         for(const child of group.children){child.classList.toggle('selected',child===option);child.setAttribute('aria-pressed',child===option);}
         if(key==='spreadMode')guide.textContent=spreadDescription()+' На внешнем экране всегда одна.';
       });
@@ -223,17 +239,7 @@ function showTypography(tab='Страница'){
   if(tab==='Страница'){
     choice('Страницы на внутреннем экране','spreadMode',[['Авто','auto'],['Одна','one'],['Две','two']]);
     guide.textContent=spreadDescription()+' На внешнем экране всегда одна.';controls.append(guide);
-    for(const [key,title,description] of [
-      ['progressLine','Строка прогресса','Под книгой · страницы и процент'],
-      ['pageNumbers','Номера на страницах','Отдельная цифра внизу каждого листа']
-    ]){
-      const toggle=button('','displayToggle',()=>{
-        reflowSettings({[key]:!settings[key]});toggle.setAttribute('aria-checked',settings[key]);
-      });
-      const copy=el('span');copy.append(el('b','',title),el('small','',description));
-      toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',settings[key]);
-      toggle.append(copy,el('i','toggleTrack'));controls.append(toggle);
-    }
+    choice('Внизу страницы','pageFooter',[['Прогресс','progress'],['Номера страниц','numbers'],['Ничего','none']]);
     slider('Боковые поля','outside',0,60,1,' dp');
     slider('Сверху и снизу','vertical',0,72,1,' dp');
     slider('Поле у сгиба','gutter',0,60,1,' dp');
@@ -263,6 +269,7 @@ function showTypography(tab='Страница'){
     reset.disabled=settings.brightness<0;controls.append(reset);
   }
   controls.append(button('О приложении','aboutLink settingsLink',()=>aboutBookfold(tab)));
+  paintTypePreview(preview);
 }
 function aboutBookfold(previous='Страница'){
   const area=panel('О приложении'),hero=el('div','aboutBook'),image=el('img');

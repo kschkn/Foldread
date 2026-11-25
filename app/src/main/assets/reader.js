@@ -30,22 +30,29 @@ const read = (key, fallback) => {
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const sample = {id:'sails',title:'Алые паруса',author:'Александр Грин',format:'1923',cover:'sails-cover.jpg',accent:'#95543c'};
 const settings = Object.assign({font:18,night:false,family:'Spectral',fold:true,
-  outside:22,vertical:24,gutter:16,leading:1.5,brightness:-1,indent:1.1,hyphenate:true,justify:false,liveSpine:true,spreadMode:'auto',progressLine:true,pageNumbers:false},read('settings',{}));
+  outside:22,vertical:24,gutter:16,leading:1.5,brightness:-1,indent:1.1,hyphenate:true,justify:false,liveSpine:true,spreadMode:'auto'},read('settings',{}));
+if(!['progress','numbers','none'].includes(settings.pageFooter)){
+  settings.pageFooter=settings.pageNumbers?'numbers':settings.progressLine===false?'none':'progress';
+}
+if('pageNumbers' in settings || 'progressLine' in settings){
+  delete settings.pageNumbers;
+  delete settings.progressLine;
+  write('settings',settings);
+}
 if(!fontNames.includes(settings.family)) settings.family=settings.family==='sans'?'Roboto':'Spectral';
 const romans=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
 const numeral = n => romans[n] || String(n+1);
 let book, chapter=0, page=0, columns=1, pages=1, width=0, model, paragraphs=[], boundaries=new Map();
 let position={chapter:0,p:0,offset:0}, marks=[], animation=null, revision=0, resizeTimer;
 let pendingTurn=null, touch=null;
-let pagination=null, countingTimer=0,bookPercent=0,menuMotionUntil=0;
+let pagination=null, countingTimer=0,bookPercent=0;
 let chapterLengths=[], chapterStarts=[], totalLength=1, busyImport=false, toastTimer;
 const catalog = () => [sample,...Object.values(JSON.parse(window.Library?.catalog() || '{}'))];
 const textOf = () => book.chapters[chapter];
 
 function applySettings() {
   document.body.classList.toggle('night',settings.night);
-  document.body.classList.toggle('hideProgress',settings.progressLine===false);
-  document.body.classList.toggle('showFolios',!!settings.pageNumbers);
+  document.body.dataset.footer=settings.pageFooter;
   document.documentElement.style.setProperty('--type',settings.font+'px');
   const style=document.documentElement.style;
   style.setProperty('--reading','"'+settings.family+'", '+(settings.family==='Roboto'?'sans-serif':'serif'));
@@ -147,7 +154,7 @@ function scheduleCount(){
 function countChapters(){
   countingTimer=0;
   if(document.hidden)return;
-  if(touch||animation||performance.now()<menuMotionUntil){scheduleCount();return;}
+  if(touch||animation||$('.controls').getAnimations().length){scheduleCount();return;}
   const meter=$('#bookMeasure'),work=pagination,deadline=performance.now()+7;
   while(work.index<work.counts.length){
     const index=work.index++;
@@ -171,12 +178,15 @@ function updateBookProgress(){
     const first=work.starts[chapter]+page+1,last=work.starts[chapter]+Math.min(page+columns,work.counts[chapter]);
     range=(last>first?first+'–'+last:String(first))+' из '+work.total;
   }
-  const status=(range||'Подсчёт страниц…')+' · '+bookPercent+'%';
-  $('#bookProgress').textContent=status;$('#menuBookProgress').textContent=status;
+  const location=range||'Подсчёт страниц…';
+  $('#bookProgress').textContent=location+' · '+bookPercent+'%';
+  $('#menuBookProgress').textContent=location;
   $('#chapterNumber').textContent='Глава '+numeral(chapter)+' из '+book.chapters.length;
-  if(settings.pageNumbers)for(const leaf of $('#leaves').children){
+  if(settings.pageFooter==='numbers')for(const leaf of $('#leaves').children){
     const folio=leaf.querySelector('.folio');if(folio)folio.textContent=folioNumber(Number(leaf.dataset.page));
   }
+  const preview=$('#sheet[open] .typePreview');
+  if(preview)paintTypePreview(preview);
 }
 function layout(at) {
   if(!book) return;
@@ -184,6 +194,7 @@ function layout(at) {
   closeNote();
   cancelTurn();
   columns=pageColumns();
+  $('#desk').classList.toggle('innerScreen',innerDisplay());
   $('#spread').classList.toggle('two',columns===2);
   const frame=leafFrame('left',0);
   $('#leaves').replaceChildren(frame);
@@ -277,6 +288,8 @@ function updateControls() {
   for(let i=0;i<pos.p;i++) chars+=textOf().paragraphs[i].length;
   const percent=$('#next').disabled?100:Math.floor(100*chars/Math.max(1,totalLength));
   $('#bar').style.width=percent+'%';
+  $('#bookMeter').setAttribute('aria-valuenow',percent);
+  $('#menuPercent').textContent=percent+'%';
   bookPercent=percent;updateBookProgress();
   updateEstimate();
   const marked=visibleMark()!==-1;
@@ -382,7 +395,6 @@ function syncFold() {
   window.Library?.enableFold?.(Boolean(book && innerDisplay() && (pair?.peek || settings.liveSpine || settings.fold)));
 }
 function toggleMenu() {
-  menuMotionUntil=performance.now()+240;
   document.body.classList.toggle('reading');
   if(!document.body.classList.contains('reading') && !settings.markHintSeen){
     notify('Потяните вниз от верха страницы, чтобы поставить закладку');

@@ -70,7 +70,6 @@ function onReaderResize(){
   resizeTimer=setTimeout(()=>{
     if(!at || !book)return;
     layout(position);
-    const preview=$('.typePreview');if(preview)paintTypePreview(preview);
     if(was===1 && columns===2 && settings.unfoldLight!==false && !$('#sheet').open){
       const line=book.chapters[at.chapter]?.paragraphs[at.p];
       if(line){unfoldHit={...at,end:Math.min(line.length,at.offset+55)};render();

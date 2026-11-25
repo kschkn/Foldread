@@ -43,7 +43,7 @@ i svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.55;str
 .ribbon{position:absolute;right:12px;top:0;background:#975442;width:11px;height:31px;clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%)}
 .controls{height:66px;gap:18px}.controls small{font-size:9px;color:var(--gold);letter-spacing:1.3px}.controls strong{font:18px/1.2 Spectral,serif;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;display:block}
 #contents{gap:13px;min-width:0;text-align:left;padding:0;flex:1}#contents span{display:flex;flex-direction:column;gap:3px;min-width:0}#contents i{color:var(--gold)}
-.progress{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--gold);font-variant-numeric:tabular-nums}.track{width:clamp(32px,8vw,100px);height:2px;background:#566961}.track div{height:100%;background:var(--gold)}
+.track{background:#566961}
 .arrows{gap:7px}.arrows button,.round{border:1px solid #63756b;border-radius:50%;width:44px;justify-content:center}.arrows button:disabled{opacity:.3}
 #measure{position:fixed;left:-200vw;top:0;visibility:hidden;pointer-events:none;overflow:hidden}
 .turnPlane{position:absolute;top:0;bottom:0;z-index:2;overflow:hidden;will-change:transform;pointer-events:none;background:var(--paper)}
@@ -79,7 +79,7 @@ dialog[open]{display:flex;flex-direction:column}dialog::backdrop{background:#132
 .turning .toolbar,.turning .controls{pointer-events:none}
 .reading #toast{bottom:20px}
 .settingHint{color:var(--muted);font-size:13px;line-height:1.45;margin:8px 0 0}
-.progress{min-width:0;gap:8px;white-space:nowrap}.track span{display:block;height:100%;background:var(--gold)}
+.track span{display:block;height:100%;background:var(--gold)}
 #estimate{color:#efe9d6}
 #returnPlace{position:fixed;bottom:76px;left:12px;z-index:4;background:var(--desk);border:1px solid #7b9184;border-radius:22px;color:#fff;padding:0 15px;box-shadow:0 2px 8px #182e2433}
 .reading #returnPlace{bottom:10px}
@@ -108,5 +108,4 @@ body:has(.typesheet[open]) :is(.toolbar,.controls,#returnPlace){visibility:hidde
 .fontOption[aria-pressed=true]::after{content:'✓';position:absolute;right:8px;top:35%;color:var(--accent)}
 @media(max-width:559px){
   .typesheet{margin:auto 0 0;width:100%;max-width:none;max-height:58dvh;border-radius:16px 16px 0 0}
-  .progress #percent{display:none}
 }
