@@ -45,11 +45,11 @@ function openParallel(other){
   tools.append(toggle,link,links);shell.append(bar,panes,tools);document.body.append(shell);
   pair={key,links:stored.links||[],panes:[],save(){write(key,{links:this.links,places:this.panes.map(p=>p.at)});}};
   for(const [i,volume] of [book,other].entries()){
-    const pane=new ParallelPane(volume,panes,i);
+    const pane=new ParallelPane(volume,panes,i,()=>pair?.save(),i?'Перевод':'Оригинал');
     pair.panes.push(pane);
     pane.go(stored.places?.[i] || (i===0?position:read('pos.'+other.id,{chapter:0,p:0,offset:0})));
   }
-  updateLinks();syncFold();
+  extendParallel(other,tools,shell);updateLinks();syncFold();
   pair.observer=new ResizeObserver(()=>{
     if(!pair)return;
     for(const p of pair.panes){
@@ -60,13 +60,14 @@ function openParallel(other){
   for(const p of pair.panes)pair.observer.observe(p.view);
 }
 class ParallelPane {
-  constructor(volume,host,index) {
+  constructor(volume,host,index,onChange=()=>{},label='Книга') {
     this.volume=volume;
+    this.onChange=onChange;
     const node=el('article','pairPane'),header=el('div','pairBook');
-    header.append(el('small','settingLabel',index?'Перевод':'Оригинал'),el('b','',volume.title));
+    header.append(el('small','settingLabel',label),el('b','',volume.title));
     this.chapters=el('select');this.chapters.setAttribute('aria-label','Глава · '+volume.title);
     volume.chapters.forEach((c,i)=>this.chapters.add(new Option(c.title,i)));
-    this.chapters.onchange=()=>{this.go({chapter:Number(this.chapters.value),p:0,offset:0});pair.save();};
+    this.chapters.onchange=()=>{this.go({chapter:Number(this.chapters.value),p:0,offset:0});this.onChange(this);};
     this.view=el('div','pairViewport');this.flow=el('div','pairFlow');this.view.append(this.flow);
     const nav=el('nav','pairNav');
     this.prev=button('‹','round',()=>this.step(-1));this.next=button('›','round',()=>this.step(1));this.label=el('small');
@@ -89,6 +90,7 @@ class ParallelPane {
   select(p){
     this.flow.querySelector('.pairSelection')?.classList.remove('pairSelection');
     this.selection={chapter:this.chapter,p,offset:0};this.nodes[p]?.classList.add('pairSelection');
+    this.onSelect?.();
   }
   go(at,select=false) {
     const c=Math.max(0,Math.min(this.volume.chapters.length-1,at.chapter));
@@ -97,7 +99,7 @@ class ParallelPane {
     if(this.chapter!==c){
       this.chapter=c;this.selection=null;this.chapters.value=c;
       const content=this.volume.chapters[c];
-      this.nodes=content.paragraphs.map((s,i)=>{const n=el('p','',s);n.dataset.p=i;return n;});
+      this.nodes=content.paragraphs.map((s,i)=>{const n=el('p','',typeset(s));n.dataset.p=i;return n;});
       const fragment=document.createDocumentFragment();
       for(const paragraph of this.nodes)fragment.append(paragraph);
       this.flow.replaceChildren(fragment);
@@ -112,7 +114,10 @@ class ParallelPane {
     const text=this.nodes[p]?.firstChild;if(!text?.length || !this.w)return 0;
     const i=Math.min(offset,text.length-1),range=document.createRange();range.setStart(text,i);range.setEnd(text,i+1);
     const rect=range.getClientRects()[0];
-    return rect?Math.floor((rect.left-this.flow.getBoundingClientRect().left+.25)/this.w):0;
+    if(!rect)return 0;
+    const bounds=this.flow.getBoundingClientRect();
+    const reversed=this.view.closest('.tableDesk .workSide:last-child') && innerWidth>=560;
+    return Math.floor(((reversed?bounds.right-rect.right:rect.left-bounds.left)+.25)/this.w);
   }
   first(){
     if(!this.page || !this.nodes.length)return {chapter:this.chapter,p:0,offset:0};
@@ -133,7 +138,7 @@ class ParallelPane {
     const n=this.page+dir;
     if(n<0 || n>=this.count)this.go({chapter:this.chapter+dir,p:0,offset:0,end:dir<0});
     else{this.display(n);this.at=this.first();}
-    pair.save();
+    this.onChange(this);
   }
 }
 function closeParallel(){

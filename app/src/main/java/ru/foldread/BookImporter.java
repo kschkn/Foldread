@@ -31,6 +31,7 @@ final class BookImporter {
     private static final int MAX_XML = 20 * 1024 * 1024;
     private final JSONArray chapters = new JSONArray();
     private final BookNotes notes = new BookNotes();
+    private JSONArray stanzas = new JSONArray();
     private long expanded;
     private String title;
     private String author = "";
@@ -55,7 +56,7 @@ final class BookImporter {
         if (reader.chapters.length() == 0) throw new IOException("В книге нет доступного текста.");
         return new JSONObject().put("id", id).put("title", reader.title)
                 .put("author", reader.author).put("format", zipped ? "EPUB" : "FB2")
-                .put("chapters", reader.chapters).put("notes", reader.notes.texts).put("schema", 3)
+                .put("chapters", reader.chapters).put("notes", reader.notes.texts).put("schema", 4)
                 .put("cover",reader.artwork.cover).put("accent",reader.artwork.accent)
                 .put("series",reader.artwork.series).put("volume",reader.artwork.volume).put("images",reader.artwork.images);
     }
@@ -63,7 +64,9 @@ final class BookImporter {
     private void addChapter(String name, List<String> paragraphs) throws Exception {
         if (paragraphs.isEmpty()) return;
         String fallback = "Раздел " + (chapters.length() + 1);
-        chapters.put(notes.chapter(name.isEmpty() ? fallback : name, paragraphs));
+        JSONObject chapter=notes.chapter(name.isEmpty() ? fallback : name, paragraphs);
+        if(stanzas.length()>0)chapter.put("stanzas",stanzas);
+        chapters.put(chapter);stanzas=new JSONArray();
         paragraphs.clear();
     }
 
@@ -175,13 +178,16 @@ final class BookImporter {
         }
     }
 
-    private static void collect(Element root, List<String> paragraphs) {
+    private void collect(Element root, List<String> paragraphs) {
         StringBuilder line = new StringBuilder();
         collectNodes(root, paragraphs, line);
         flush(paragraphs, line);
     }
 
-    private static void collectNodes(Element el, List<String> paragraphs, StringBuilder line) {
+    private void collectNodes(Element el, List<String> paragraphs, StringBuilder line) {
+        boolean stanza=el.tagName().equals("stanza")||el.hasClass("stanza");
+        if(stanza)flush(paragraphs,line);
+        int start=paragraphs.size();
         for (Node node : el.childNodes()) {
             if (node instanceof TextNode) line.append(((TextNode) node).getWholeText());
             else if (node instanceof Element) {
@@ -191,6 +197,10 @@ final class BookImporter {
                 collectNodes(child, paragraphs, line);
                 if (block) flush(paragraphs, line);
             }
+        }
+        if(stanza){
+            flush(paragraphs,line);
+            if(paragraphs.size()>start)stanzas.put(new JSONArray().put(start).put(paragraphs.size()));
         }
     }
 

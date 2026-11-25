@@ -34,11 +34,11 @@ function showShelf(series=null) {
   if(series) area.append(button('‹ Все книги','backlink',()=>showShelf()));
   else {
     const current=all.find(x=>x.id===book?.id)||sample;
-    const hero=el('section','shelfHero'),art=coverArt(current),copy=el('div');
+    const hero=el('section','shelfHero'),art=coverArt(current),image=el('div','shelfIllustration'),copy=el('div','shelfCopy');
     copy.append(el('small','settingLabel','Сейчас читаю'),el('h3','',current.title),el('p','',current.author));
     if(book)copy.append(el('small','heroChapter','Глава '+numeral(chapter)+' · '+textOf().title));
     copy.append(button('Продолжить чтение','heroButton',()=>openFromShelf(current,art)));
-    hero.append(art,copy);area.append(hero);
+    image.append(art);hero.append(image,copy);area.append(hero);
   }
   const tools=el('div','shelfTools');
   tools.append(el('h3','',series?'Тома серии':'На полке'));
@@ -61,22 +61,62 @@ function showShelf(series=null) {
     const art=coverArt(face),caption=el('span','tileName',stack?item.series:item.title);
     const rest=el('span','bookRest');rest.append(art);
     tile.append(rest,caption,el('small','',stack?volumes.length+' · серия':series?('Том '+(item.volume||'—')+(next===item?' · следующий':'')):item.author||item.format));
+    tile.dataset.search=(stack?volumes:[item]).map(v=>[v.title,v.author,v.series].join(' ')).join(' ').toLocaleLowerCase('ru');
     grid.append(tile);
   }
+  if(all.length>1 && !series){
+    const field=el('input','bookSearch shelfSearch');field.type='search';field.placeholder='Название, автор или серия';field.setAttribute('aria-label','Поиск по полке');
+    const empty=el('p','empty','Книг по этому запросу нет.');empty.hidden=true;
+    field.oninput=()=>{
+      const q=field.value.trim().toLocaleLowerCase('ru');
+      for(const tile of grid.children)tile.hidden=!tile.dataset.search.includes(q);
+      empty.hidden=[...grid.children].some(tile=>!tile.hidden);
+    };
+    tools.after(field);grid.after(empty);
+  }
+  if(!series)appendShelfActions(area,tools);
 }
 
-function editionMenu() {
-  const area=panel('Инструменты чтения');
-  for(const [label,action] of [
-    ['Веер страниц',()=>{closeSheet();startFan();}],
-    ['Цитата-открытка',()=>pickText('quote')],
-    ['Пометка на полях',()=>pickText('note')],
-    ['Мои пометки',listNotes],
-    ['Иллюстрации · '+(book.images?.length||0),gallery],
-    ['Оригинал и перевод',chooseParallel],
-    ['Анимация перелистывания',animationSettings],
-    ['Профили чтения',profileSettings]
-  ]) area.append(button(label,'toolRow',action));
+function gestureGuide(){
+  const area=panel('Жесты чтения');
+  for(const [title,hint] of [
+    ['Листать вперёд и назад','Потяните страницу влево или вправо. Остановите палец — лист замрёт. Верните палец к началу, чтобы отменить поворот.'],
+    ['Заглянуть дальше и вернуться','На внутреннем экране удерживайте левое или правое поле. Второй рукой листайте в любую сторону. Отпустите удерживаемый край для возврата.'],
+    ['Поставить закладку','Потяните вниз от верхней части нужной страницы и отпустите, когда лента потемнеет. Повторный жест снимает закладку. Список сохранённых мест — в оглавлении.'],
+    ['Найти слово','Удерживайте слово в тексте и выберите «Значение и словарь».'],
+    ['Быстро пролистать','Удерживайте нижний край. Передвигайте палец по вееру и отпустите на нужном месте.']
+  ]){
+    const block=el('section','guideRow');block.append(el('h3','',title),el('p','settingHint',hint));area.append(block);
+  }
+}
+function editionMenu(selected='Чтение'){
+  const area=panel('Инструменты чтения');$('#sheet').classList.add('toolsSheet');
+  const groups={
+    'Чтение':[
+      ['Слушать книгу','С текущего места, в фоне и в машине',speechMenu],
+      ['Словарь книги','Значения слов и сохранённые примеры',wordShelf],
+      ['Кто это?','Упоминания имени до текущего места',()=>pickWord('name')],
+      ['Цитата-открытка','Выбрать фразу и оформить картинку',()=>pickText('quote')],
+      ['Цитата на внешний экран','Показать фразу при складывании',()=>pickText('pocket')],
+      ['Пометка на полях','Привязать заметку к абзацу',()=>pickText('note')],['Мои пометки','Открыть сохранённые заметки',listNotes]],
+    'Разворот':[
+      ['Атлас и карта','Иллюстрация рядом с текстом',atlasPicker],['Блокнот цитат','Переносить фразы через сгиб',notebook],
+      ['Поиск на развороте','Совпадения и контекст рядом',spreadSearch],['Оригинал и перевод','Две книги со связанными абзацами',chooseParallel],
+      ['Репетиция стихов','Вспоминать строки по первым словам',poetryDesk],['Чтение вдвоём','Каждому своя сторона экрана',tableReading]],
+    'Управление':[
+      ['Жесты чтения','Как листать, удерживать место и ставить закладки',gestureGuide],
+      ['Настройки Fold','Сгиб, поля у шарнира и режим подставки',foldSettings],
+      ['Режим подставки','Текст сверху, управление снизу',()=>startStand()],
+      ['Веер страниц','Быстро переместиться по книге',()=>{closeSheet();startFan();}],
+      ['Иллюстрации','Все рисунки книги',gallery],['Анимация перелистывания','Пример каждого эффекта',animationSettings],
+      ['Профили чтения','Сохранить вид страницы для дня и ночи',profileSettings],['Перенос библиотеки','Копия полки, закладок и настроек',backupMenu]]
+  };
+  if(!Object.hasOwn(groups,selected))selected='Чтение';
+  const tabs=el('div','tabs');for(const key of Object.keys(groups))tabs.append(button(key,key===selected?'selected':'',()=>editionMenu(key)));
+  const list=el('div','toolList');area.append(tabs,list);
+  for(const [name,description,action] of groups[selected]){
+    const b=button('','toolChoice',action);b.append(el('b','',name),el('small','',description));list.append(b);
+  }
 }
 function notesForBook() {
   if(!noteCache.has(book.id))noteCache.set(book.id,read('annotations.'+book.id,[]));
@@ -116,7 +156,7 @@ function pickText(mode) {
       if(value){clearPick();composeQuote(value);}else notify('Удерживайте слово и растяните выделение');
     });
     take.onpointerdown=e=>e.preventDefault();bar.append(take);
-  }else bar.append(el('span','','Коснитесь абзаца для пометки'));
+  }else bar.append(el('span','',({pocket:'Коснитесь абзаца для внешнего экрана',listen:'С какого абзаца начать?',name:'Коснитесь имени в тексте',word:'Коснитесь слова в тексте'})[mode]||'Коснитесь абзаца для пометки'));
   bar.append(button('Отмена','',clearPick));
   document.body.append(bar);syncFold();
 }
@@ -126,8 +166,11 @@ function handleEditionPress(e) {
   if(!pickingText)return false;
   if(pickingText==='quote')return true;
   if(para){
-    const p=Number(para.dataset.paragraph);clearPick();
-    editNote(p,notesForBook().find(n=>n.chapter===chapter && n.p===p));
+    const p=Number(para.dataset.paragraph),mode=pickingText,word=wordAtPoint(e,para);clearPick();
+    if(mode==='pocket')pocketEditor(textOf().paragraphs[p]);
+    else if(mode==='listen')beginSpeech({chapter,p,offset:0});
+    else if(mode==='name'||mode==='word')wordDetails(mode,word);
+    else editNote(p,notesForBook().find(n=>n.chapter===chapter && n.p===p));
   }
   return true;
 }
@@ -155,7 +198,7 @@ function composeQuote(text) {
     ctx.fillStyle='#2c322c';ctx.font='36px "'+settings.family+'"';
     lines.forEach((l,i)=>ctx.fillText(l.trim(),76,136+53*i));
     const foot=card.height-106;ctx.fillStyle=colour(book);ctx.fillRect(76,foot-23,70,3);
-    ctx.font='25px Roboto';ctx.fillText(book.author||'Foldread',76,foot+16,748);
+    ctx.font='25px Roboto';ctx.fillText(book.author||'Bookfold',76,foot+16,748);
     ctx.font='26px Spectral';ctx.fillText(book.title,76,foot+61,748);return true;
   };
   input.oninput=draw;
@@ -173,7 +216,7 @@ function composeQuote(text) {
   area.append(input,trim,card,actions);draw();
 }
 
-const profileKeys=['font','family','outside','vertical','gutter','leading','night','brightness'];
+const profileKeys=['font','family','outside','vertical','gutter','leading','night','brightness','indent','justify','hyphenate'];
 function profileSettings() {
   const area=panel('Профили чтения'),profiles=read('profiles',{});
   const value=()=>Object.fromEntries(profileKeys.map(k=>[k,settings[k]]));
@@ -226,10 +269,13 @@ function viewArtwork(i) {
     const b=button(label,'',action);b.disabled=label==='‹'&&i===0||label==='›'&&i===book.images.length-1;tools.append(b);
   }
   area.append(tools);
+  area.append(button('Открыть в атласе','toolRow',()=>atlas(i)));
 }
 
 function exitEditionOverlay(){
   if($('#sheet').open) return false;
+  if($('#pocketCard')){dismissPocket();return true;}
+  if(standMode){endStand();return true;}
   if(fanSession){endFan(false);return true;}
   if(pickingText){clearPick();return true;}
   if($('#parallel')){closeParallel();return true;}

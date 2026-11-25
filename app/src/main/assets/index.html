@@ -5,39 +5,45 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#233b36">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'">
-  <title>Foldread</title>
+  <title>Bookfold</title>
   <link rel="stylesheet" href="reader.css">
   <link rel="stylesheet" href="edition.css">
+  <link rel="stylesheet" href="studio.css">
   <script defer src="reading-tools.js"></script>
   <script defer src="edition.js"></script>
   <script defer src="page-fan.js"></script>
   <script defer src="turn-effects.js"></script>
   <script defer src="parallel.js"></script>
+  <script defer src="workspaces.js"></script>
+  <script defer src="fold-tools.js"></script>
+  <script defer src="collection.js"></script>
   <script defer src="reader.js"></script>
 </head>
 <body class="reading">
   <header class="toolbar">
-    <div class="wordmark"><i data-icon="book"></i><span>Foldread</span></div>
+    <div class="wordmark"><i data-icon="book"></i><span>Bookfold</span></div>
     <div class="actions">
       <button id="library" aria-label="Библиотека"><i data-icon="library"></i><span>Библиотека</span></button>
       <span class="divider"></span>
       <button id="mark" aria-label="Поставить закладку"><i data-icon="bookmark"></i></button>
-      <button id="settings" aria-label="Настройки чтения" class="aa">Аа</button>
-      <button id="extras" aria-label="Инструменты чтения">•••</button>
+      <button id="settings" aria-label="Настройки чтения" title="Настройки чтения"><b class="aa" aria-hidden="true">Аа</b></button>
+      <button id="extras" aria-label="Инструменты чтения" title="Инструменты чтения"><i data-icon="tools"></i></button>
     </div>
   </header>
   <main id="desk">
     <section id="spread" aria-label="Страницы книги"><div id="leaves"></div></section>
+    <div id="bookProgress" aria-label="Прогресс по всей книге"></div>
   </main>
   <footer class="controls">
     <button id="contents" aria-label="Оглавление и закладки">
-      <i data-icon="contents"></i><span><small id="chapterNumber"></small><strong id="chapterName"></strong></span>
+      <i data-icon="contents"></i><span><small id="chapterNumber"></small><strong id="chapterName"></strong><small id="menuBookProgress"></small></span>
     </button>
-    <button class="progress" id="timeLeft" aria-label="Время до конца главы"><span id="estimate"></span><span id="percent"></span><span class="track"><span id="bar"></span></span></button>
+    <button class="progress" id="timeLeft" aria-label="Время до конца главы"><span id="estimate"></span><span class="track"><span id="bar"></span></span></button>
     <div class="arrows"><button id="prev" aria-label="Назад"><i data-icon="left"></i></button><button id="next" aria-label="Вперёд"><i data-icon="right"></i></button></div>
   </footer>
   <button id="returnPlace" hidden>↶ К месту чтения</button>
   <div id="measure" aria-hidden="true"></div>
+  <div id="bookMeasure" aria-hidden="true"></div>
   <dialog id="sheet"><div class="sheetHead"><h2></h2><button id="close" class="round" aria-label="Закрыть"><i data-icon="close"></i></button></div><div id="panel"></div></dialog>
   <div id="toast" role="status"></div>
 </body>
