@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="reader.css">
   <link rel="stylesheet" href="edition.css">
   <link rel="stylesheet" href="studio.css">
+  <script defer src="cutout.js"></script>
   <script defer src="reading-tools.js"></script>
   <script defer src="edition.js"></script>
   <script defer src="page-fan.js"></script>
@@ -24,12 +25,16 @@
   <header class="toolbar">
     <div class="wordmark"><i data-icon="book"></i><span>Bookfold</span></div>
     <div class="actions">
+      <div class="actionsStart">
       <button id="library" aria-label="Библиотека"><i data-icon="library"></i><span>Библиотека</span></button>
       <span class="divider"></span>
       <button id="mark" aria-label="Поставить закладку"><i data-icon="bookmark"></i></button>
+      </div>
+      <div class="actionsEnd">
       <button id="stats" aria-label="Статистика чтения" title="Статистика чтения"><i data-icon="stats"></i></button>
       <button id="settings" aria-label="Настройки чтения" title="Настройки чтения"><b class="aa" aria-hidden="true">Аа</b></button>
       <button id="extras" aria-label="Инструменты чтения" title="Инструменты чтения"><i data-icon="tools"></i></button>
+      </div>
     </div>
   </header>
   <main id="desk">

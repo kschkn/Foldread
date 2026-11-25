@@ -1,0 +1,5 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/widget_root" style="@style/WidgetCompact">
+    <TextView style="@style/WidgetCompactTitle" android:id="@id/widget_title" android:text="Алые паруса"/>
+    <TextView style="@style/WidgetCompactLine" android:id="@id/widget_mark_location" android:textColor="#7C463D" android:text="Глава IV"/>
+</LinearLayout>

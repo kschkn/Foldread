@@ -244,7 +244,8 @@ function showTypography(tab='Страница'){
     guide.textContent=spreadDescription()+' На внешнем экране всегда одна.';controls.append(guide);
     choice('Внизу страницы','pageFooter',[['Прогресс','progress'],['Номера страниц','numbers'],['Ничего','none']]);
     slider('Боковые поля','outside',0,60,1,' dp');
-    slider('Сверху и снизу','vertical',0,72,1,' dp');
+    slider('Поле сверху','vertical',0,72,1,' dp');
+    slider('Поле снизу','bottom',0,72,1,' dp');
     slider('Поле у сгиба','gutter',0,60,1,' dp');
     const details=el('details','typeDetails');details.append(el('summary','','Вёрстка абзаца'));controls.append(details);
     slider('Межстрочный интервал','leading',1.15,2,.05,' ×',details);

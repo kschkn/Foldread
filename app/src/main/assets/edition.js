@@ -216,7 +216,7 @@ function composeQuote(text) {
   area.append(input,trim,card,actions);draw();
 }
 
-const profileKeys=['font','family','outside','vertical','gutter','leading','night','brightness','indent','justify','hyphenate'];
+const profileKeys=['font','family','outside','vertical','bottom','gutter','leading','night','brightness','indent','justify','hyphenate'];
 function profileSettings() {
   const area=panel('Профили чтения'),profiles=read('profiles',{});
   const value=()=>Object.fromEntries(profileKeys.map(k=>[k,settings[k]]));

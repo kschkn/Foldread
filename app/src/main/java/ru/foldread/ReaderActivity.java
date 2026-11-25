@@ -43,6 +43,7 @@ public final class ReaderActivity extends Activity implements SensorEventListene
     private static final int PICK_BOOK = 40;
     private static final ExecutorService imports = Executors.newSingleThreadExecutor();
     private WebView web;
+    private volatile String displayCutout="null";
     private AlertDialog archiveDialog;
     private File pendingCard;
     private File backupSnapshot;
@@ -138,6 +139,13 @@ public final class ReaderActivity extends Activity implements SensorEventListene
                 return new WebResourceResponse("text/plain", "UTF-8", 404, "Not found", null, new ByteArrayInputStream(new byte[0]));
             }
         });
+        if(Build.VERSION.SDK_INT>=28){
+            web.setOnApplyWindowInsetsListener((view,insets)->{
+                updateDisplayCutout(insets);
+                return view.onApplyWindowInsets(insets);
+            });
+            web.addOnLayoutChangeListener((view,l,t,r,b,ol,ot,or,ob)->updateDisplayCutout(view.getRootWindowInsets()));
+        }
         setContentView(web);
         immersive();
         web.loadUrl("https://" + HOST + "/index.html");
@@ -148,6 +156,7 @@ public final class ReaderActivity extends Activity implements SensorEventListene
     }
 
     private final class Library {
+        @JavascriptInterface public String displayCutout(){return displayCutout;}
         @JavascriptInterface public String appVersion(){
             try{
                 android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);
@@ -319,6 +328,30 @@ public final class ReaderActivity extends Activity implements SensorEventListene
 
     private void openDocument(int request){
         startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),request);
+    }
+
+    @android.annotation.TargetApi(28)
+    private void updateDisplayCutout(WindowInsets insets){
+        if(insets==null||web.getWidth()==0||web.getHeight()==0)return;
+        android.view.DisplayCutout cut=insets.getDisplayCutout();
+        String snapshot="null";
+        if(cut!=null){
+            int[] origin=new int[2];web.getLocationInWindow(origin);
+            int w=web.getWidth(),h=web.getHeight(),x=origin[0],y=origin[1];
+            int left=Math.max(0,cut.getSafeInsetLeft()-x),top=Math.max(0,cut.getSafeInsetTop()-y);
+            int right=Math.max(0,cut.getSafeInsetRight()-(web.getRootView().getWidth()-x-w));
+            int bottom=Math.max(0,cut.getSafeInsetBottom()-(web.getRootView().getHeight()-y-h));
+            int start=w,end=0;
+            for(android.graphics.Rect r:cut.getBoundingRects()){
+                if(top>0 && r.top<top+y && r.bottom>y && r.right>x && r.left<x+w){
+                    start=Math.min(start,Math.max(0,r.left-x));end=Math.max(end,Math.min(w,r.right-x));
+                }
+            }
+            if((left|top|right|bottom)!=0)snapshot=new org.json.JSONArray().put(w).put(h).put(left).put(top).put(right).put(bottom).put(start).put(end).toString();
+        }
+        if(snapshot.equals(displayCutout))return;
+        displayCutout=snapshot;
+        callJs("window.applyReaderCutout?.("+snapshot+")");
     }
 
     private void immersive() {

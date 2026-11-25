@@ -1,0 +1,5 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/widget_root" style="@style/WidgetCompact">
+    <TextView style="@style/WidgetCompactLine" android:text="@string/widget_time"/>
+    <TextView style="@style/WidgetCompactTitle" android:id="@id/widget_duration" android:text="2 ч 15 мин"/>
+</LinearLayout>

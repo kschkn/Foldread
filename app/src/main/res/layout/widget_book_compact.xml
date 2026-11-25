@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/widget_root" style="@style/WidgetCompact" android:background="@drawable/widget_ink">
+    <TextView style="@style/WidgetCompactTitle" android:id="@id/widget_title" android:textColor="#FFF7E8" android:text="Алые паруса"/>
+    <LinearLayout android:id="@id/widget_numbers" android:layout_width="match_parent" android:layout_height="16dp" android:gravity="center_vertical">
+        <TextView style="@style/WidgetCompactLine" android:id="@id/widget_pages" android:layout_width="0dp"
+            android:layout_weight="1" android:textColor="#EFE9DA" android:text="33–34/138"/>
+        <TextView style="@style/WidgetCompactLine" android:id="@id/widget_percent" android:layout_width="wrap_content"
+            android:layout_marginStart="3dp" android:textColor="#DAC69F" android:text="24%"/>
+    </LinearLayout>
+</LinearLayout>

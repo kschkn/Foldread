@@ -9,6 +9,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.SizeF;
 import android.view.View;
 import android.widget.RemoteViews;
 import java.io.File;
@@ -16,6 +19,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.json.JSONObject;
 
 public abstract class ReadingWidgets extends AppWidgetProvider {
@@ -36,13 +41,33 @@ public abstract class ReadingWidgets extends AppWidgetProvider {
     private static Bitmap thumbnail;
 
     @Override public void onUpdate(Context context,AppWidgetManager manager,int[] ids){
-        if(ids.length>0)manager.updateAppWidget(ids,views(context,getClass()));
+        update(context,manager,getClass(),ids);
+    }
+    @Override public void onAppWidgetOptionsChanged(Context context,AppWidgetManager manager,int id,Bundle options){
+        update(context,manager,getClass(),new int[]{id});
     }
 
     static void refresh(Context context,Class<? extends ReadingWidgets> provider){
         AppWidgetManager manager=AppWidgetManager.getInstance(context);
         int[] ids=manager.getAppWidgetIds(new ComponentName(context,provider));
-        if(ids.length>0)manager.updateAppWidget(ids,views(context,provider));
+        update(context,manager,provider,ids);
+    }
+
+    private static void update(Context context,AppWidgetManager manager,Class<? extends ReadingWidgets> provider,int[] ids){
+        if(ids.length==0)return;
+        RemoteViews compact=views(context,provider,true),large=views(context,provider,false);
+        int wide=provider==Time.class?108:provider==Bookmark.class?135:provider==Week.class?192:175;
+        int tall=provider==Week.class?110:100;
+        if(Build.VERSION.SDK_INT>=31){
+            Map<SizeF,RemoteViews> layouts=new LinkedHashMap<>();
+            layouts.put(new SizeF(100,40),compact);layouts.put(new SizeF(wide,tall),large);
+            manager.updateAppWidget(ids,new RemoteViews(layouts));
+        }else for(int id:ids){
+            Bundle options=manager.getAppWidgetOptions(id);
+            boolean portrait=options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)>=wide && options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)>=tall;
+            boolean landscape=options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)>=wide && options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)>=tall;
+            manager.updateAppWidget(id,new RemoteViews(landscape?large:compact,portrait?large:compact));
+        }
     }
 
     static void saveBook(Context context,String id,String title,String cover,String range,int percent){
@@ -53,9 +78,12 @@ public abstract class ReadingWidgets extends AppWidgetProvider {
         refresh(context,CurrentBook.class);
     }
 
-    private static RemoteViews views(Context context,Class<? extends ReadingWidgets> provider){
-        if(provider==Week.class)return week(context);
-        int layout=provider==Bookmark.class?R.layout.widget_bookmark:provider==Time.class?R.layout.widget_time:R.layout.widget_book;
+    private static RemoteViews views(Context context,Class<? extends ReadingWidgets> provider,boolean compact){
+        if(provider==Week.class)return week(context,compact);
+        int layout;
+        if(provider==Bookmark.class)layout=compact?R.layout.widget_bookmark_compact:R.layout.widget_bookmark;
+        else if(provider==Time.class)layout=compact?R.layout.widget_time_compact:R.layout.widget_time;
+        else layout=compact?R.layout.widget_book_compact:R.layout.widget_book;
         RemoteViews views=new RemoteViews(context.getPackageName(),layout);
         String action=provider==Bookmark.class?OPEN_MARK:provider==Time.class?OPEN_STATS:OPEN_READER;
         Intent open=new Intent(context,ReaderActivity.class).setAction(action)
@@ -79,9 +107,10 @@ public abstract class ReadingWidgets extends AppWidgetProvider {
         int percent=prefs.getInt("percent",0);
         views.setTextViewText(R.id.widget_title,hasBook?prefs.getString("title",""):context.getString(R.string.widget_open_book));
         String range=prefs.getString("range","");
-        views.setTextViewText(R.id.widget_pages,range.isEmpty()?context.getString(R.string.widget_counting):range);
+        views.setTextViewText(R.id.widget_pages,range.isEmpty()?context.getString(R.string.widget_counting):compact?range.replace(" из ","/"):range);
         views.setTextViewText(R.id.widget_percent,percent+"%");
         views.setViewVisibility(R.id.widget_numbers,hasBook?View.VISIBLE:View.GONE);
+        if(compact)return views;
         views.setViewVisibility(R.id.widget_bar,hasBook?View.VISIBLE:View.GONE);
         views.setProgressBar(R.id.widget_bar,100,percent,false);
         Bitmap image=cover(context,id,prefs.getString("cover",""));
@@ -94,17 +123,18 @@ public abstract class ReadingWidgets extends AppWidgetProvider {
         return context.getSharedPreferences("audio-reader",Context.MODE_PRIVATE).getInt("weeklyGoal",140);
     }
 
-    private static RemoteViews week(Context context){
+    private static RemoteViews week(Context context,boolean compact){
         String pkg=context.getPackageName();
-        RemoteViews views=new RemoteViews(pkg,R.layout.widget_week);
+        RemoteViews views=new RemoteViews(pkg,compact?R.layout.widget_week_compact:R.layout.widget_week);
         SharedPreferences prefs=context.getSharedPreferences("audio-reader",Context.MODE_PRIVATE);
         LocalDate today=LocalDate.now(),monday=today.with(DayOfWeek.MONDAY);
         String[] names=context.getResources().getStringArray(R.array.widget_days);
         long total=0;int goal=weeklyGoal(context);
-        views.removeAllViews(R.id.widget_days);
+        if(!compact)views.removeAllViews(R.id.widget_days);
         for(int i=0;i<7;i++){
             LocalDate date=monday.plusDays(i);
             long millis=prefs.getLong("day."+date,0);total+=millis;
+            if(compact)continue;
             RemoteViews cell=new RemoteViews(pkg,R.layout.widget_day);
             cell.setTextViewText(R.id.day_name,names[i]);
             cell.setTextViewText(R.id.day_minutes,date.isAfter(today)?"·":Long.toString(millis/60000));
@@ -113,7 +143,7 @@ public abstract class ReadingWidgets extends AppWidgetProvider {
         }
         long minutes=total/60000;
         views.setTextViewText(R.id.widget_week_total,context.getString(R.string.widget_week_minutes,minutes,goal));
-        views.setProgressBar(R.id.widget_bar,goal,(int)Math.min(minutes,goal),false);
+        if(!compact)views.setProgressBar(R.id.widget_bar,goal,(int)Math.min(minutes,goal),false);
         views.setOnClickPendingIntent(R.id.widget_root,PendingIntent.getActivity(context,0,new Intent(context,WeeklyGoalActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
         return views;

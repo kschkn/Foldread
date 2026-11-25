@@ -32,6 +32,7 @@ const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const sample = {id:'sails',title:'Алые паруса',author:'Александр Грин',format:'1923',cover:'sails-cover.jpg',accent:'#95543c'};
 const settings = Object.assign({font:18,night:false,family:'Spectral',fold:true,
   outside:22,vertical:24,gutter:16,leading:1.5,brightness:-1,indent:1.1,hyphenate:true,justify:false,liveSpine:true,spreadMode:'auto'},read('settings',{}));
+if(!Number.isFinite(settings.bottom))settings.bottom=Math.min(8,settings.vertical);
 if(!['progress','numbers','none'].includes(settings.pageFooter)){
   settings.pageFooter=settings.pageNumbers?'numbers':settings.progressLine===false?'none':'progress';
 }
@@ -76,6 +77,7 @@ function applySettings() {
   style.setProperty('--reading','"'+settings.family+'", '+(settings.family==='Roboto'?'sans-serif':'serif'));
   style.setProperty('--outside',settings.outside+'px');
   style.setProperty('--vertical',settings.vertical+'px');
+  style.setProperty('--bottom',settings.bottom+'px');
   style.setProperty('--gutter',settings.gutter+'px');
   style.setProperty('--leading',settings.leading);
   style.setProperty('--indent',settings.indent+'em');

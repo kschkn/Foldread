@@ -1,5 +1,5 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="110dp" android:minHeight="100dp" android:targetCellWidth="2" android:targetCellHeight="2"
-    android:minResizeWidth="105dp" android:minResizeHeight="96dp" android:resizeMode="horizontal|vertical"
-    android:initialLayout="@layout/widget_time" android:previewLayout="@layout/widget_time"
+    android:minWidth="100dp" android:minHeight="40dp" android:targetCellWidth="2" android:targetCellHeight="1"
+    android:minResizeWidth="100dp" android:minResizeHeight="40dp" android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/widget_time_compact" android:previewLayout="@layout/widget_time_compact"
     android:description="@string/widget_time_description" android:widgetCategory="home_screen" android:updatePeriodMillis="0"/>
